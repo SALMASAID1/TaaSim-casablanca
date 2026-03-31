@@ -1,392 +1,366 @@
-# =============================================================================
-# TaaSim — Docker Compose Stack
-# Sprint 1 · task01_docker-compose-stack
-# ENSA Al Hoceima · Advanced Big Data Capstone 2025-2026
-# =============================================================================
-#
-# REQUIRED FILES (place alongside this file before running):
-#   Dockerfile.spark          — custom Spark image with S3A JARs
-#   config/spark-defaults.conf — Spark S3A + tuning config
-#
-# QUICK START:
-#   docker compose up --build -d          # first run — builds Spark image
-#   docker compose up -d                  # subsequent runs (image cached)
-#   docker compose ps                     # wait until all show (healthy)
-#
-# TASK01 ACCEPTANCE CRITERIA — HEALTH CHECKS:
-#   docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
-#   docker exec minio mc alias set local http://localhost:9000 admin password123
-#   docker exec minio mc ls local/taasim
-#   docker exec -it cassandra cqlsh
-#   curl http://localhost:8081/overview    # Flink Job Manager UI
-#   curl http://localhost:8080             # Spark Master UI
-#   curl http://localhost:3000/api/health  # Grafana
-#
-# MEMORY BUDGET (8 GB host):
-#   Kafka       ~300 MB   Cassandra  ~768 MB   Flink JM   ~1.0 GB
-#   Flink TM   ~1.7 GB   MinIO      ~200 MB   Spark M    ~512 MB
-#   Spark W    ~2.0 GB   Grafana    ~150 MB   ─────────────────────
-#                                             Total  ~6.6 GB  ✓
-# =============================================================================
+version: "3.8"
 
 networks:
-  taasim-network:
-    name: taasim-network
+  taasim:
     driver: bridge
 
 volumes:
-  kafka-data:
-  minio-data:
-  cassandra-data:
-  grafana-data:
+  minio_data:
+  cassandra_data:
+  flink_checkpoints:
+  grafana_data:
 
+# ---------------------------------------------------------------------------
+# Common S3A / MinIO environment injected into Flink & Spark
+# ---------------------------------------------------------------------------
+x-s3a-env: &s3a-env
+  AWS_ACCESS_KEY_ID: minioadmin
+  AWS_SECRET_ACCESS_KEY: minioadmin
+  AWS_ENDPOINT_URL: http://minio:9000
+  # Hadoop S3A settings passed as Spark / Flink conf via env
+  HADOOP_CONF_DIR: /opt/hadoop/conf
+
+# ---------------------------------------------------------------------------
+# 1. KAFKA — KRaft mode (no Zookeeper)
+# ---------------------------------------------------------------------------
 services:
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 1. KAFKA  (KRaft mode — no Zookeeper)
-  #
-  # Listener layout:
-  #   PLAINTEXT  kafka:29092    → inter-container (Flink jobs, producers)
-  #   CONTROLLER kafka:9093     → KRaft controller (internal only)
-  #   EXTERNAL   0.0.0.0:9092  → host access (kafka-topics.sh, console tools)
-  # ─────────────────────────────────────────────────────────────────────────────
   kafka:
-    image: confluentinc/cp-kafka:7.4.0
-    container_name: kafka
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: taasim-kafka
     hostname: kafka
     networks:
-      - taasim-network
+      - taasim
     ports:
-      - "9092:9092"
+      - "9092:9092"        # host access
+      - "9101:9101"        # JMX (optional)
     environment:
+      # KRaft — no Zookeeper
+      KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
-      KAFKA_LISTENERS: "PLAINTEXT://kafka:29092,CONTROLLER://kafka:9093,EXTERNAL://0.0.0.0:9092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_LOG_RETENTION_HOURS: 168            # 7-day retention (brief §6.2)
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # topics created by kafka-init
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168        # 7-day retention (§6.2)
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: "TaaSim-KRaft-Cluster-01"
     volumes:
-      - kafka-data:/var/lib/kafka/data
+      - /var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
-      start_period: 30s
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 15s
       timeout: 10s
-      retries: 5
-    restart: unless-stopped
+      retries: 10
+      start_period: 30s
 
-  # ─── 1b. KAFKA INIT — create the 6 required TaaSim topics ─────────────────
+  # Convenience: create the three required topics on startup
   kafka-init:
-    image: confluentinc/cp-kafka:7.4.0
-    container_name: kafka-init
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: taasim-kafka-init
     networks:
-      - taasim-network
+      - taasim
     depends_on:
       kafka:
         condition: service_healthy
-    entrypoint: >
-      bash -xc "
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
-          --topic raw.gps           --partitions 3 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
-          --topic raw.trips         --partitions 3 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
-          --topic processed.gps     --partitions 3 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
-          --topic processed.demand  --partitions 1 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
-          --topic processed.matches --partitions 1 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
-          --topic raw.unmatched     --partitions 1 --replication-factor 1 &&
-        echo '=== Topics ready ===' &&
-        kafka-topics --bootstrap-server kafka:29092 --list
+    entrypoint: ["/bin/bash", "-c"]
+    command: |
       "
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic raw.gps          --partitions 4 --replication-factor 1 --config retention.ms=604800000
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic raw.trips        --partitions 4 --replication-factor 1 --config retention.ms=604800000
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic processed.demand --partitions 2 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic processed.gps    --partitions 4 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic processed.matches --partitions 2 --replication-factor 1
+      echo '--- Topics created ---'
+      kafka-topics --bootstrap-server kafka:29092 --list
+      "
+    restart: on-failure
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 2. MINIO  (S3-compatible object store)
-  #
-  # S3 API    → http://localhost:9000  (or http://minio:9000 inside Docker)
-  # Console   → http://localhost:9001  (admin / password123)
-  # ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 2. MINIO — S3-compatible object store
+# ---------------------------------------------------------------------------
   minio:
-    image: minio/minio:latest
-    container_name: minio
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: taasim-minio
     hostname: minio
     networks:
-      - taasim-network
+      - taasim
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
     environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password123      # ≥ 8 chars — MinIO enforces this
-    command: server /data --console-address ":9001"
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     volumes:
-      - minio-data:/data
+      - minio_data:/data
+    command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      start_period: 10s
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 5
-    restart: unless-stopped
+      retries: 10
+      start_period: 20s
 
-  # ─── 2b. MINIO INIT — create full bucket layout (brief §4.2) ──────────────
+  # Create buckets / prefixes on first boot
   minio-init:
-    image: minio/mc:latest
-    container_name: minio-init
+    image: minio/mc:RELEASE.2024-05-10T01-41-38Z
+    container_name: taasim-minio-init
     networks:
-      - taasim-network
+      - taasim
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set local http://minio:9000 admin password123 &&
-        mc mb --ignore-existing local/taasim/raw/porto-trips       &&
-        mc mb --ignore-existing local/taasim/raw/nyc-tlc           &&
-        mc mb --ignore-existing local/taasim/raw/kafka-archive     &&
-        mc mb --ignore-existing local/taasim/curated/trips         &&
-        mc mb --ignore-existing local/taasim/curated/demand-by-zone &&
-        mc mb --ignore-existing local/taasim/ml/features           &&
-        mc mb --ignore-existing local/taasim/ml/models             &&
-        mc mb --ignore-existing local/taasim/flink-checkpoints     &&
-        echo '=== Buckets ready ===' &&
-        mc ls local/taasim
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
       "
+      mc alias set local http://minio:9000 minioadmin minioadmin
+      mc mb --ignore-existing local/raw
+      mc mb --ignore-existing local/curated
+      mc mb --ignore-existing local/ml
+      mc mb --ignore-existing local/kafka-archive
+      # Create placeholder objects so prefixes are visible in console
+      echo 'ok' | mc pipe local/raw/porto-trips/.keep
+      echo 'ok' | mc pipe local/raw/nyc-tlc/.keep
+      echo 'ok' | mc pipe local/raw/kafka-archive/.keep
+      echo 'ok' | mc pipe local/curated/trips/.keep
+      echo 'ok' | mc pipe local/curated/demand-by-zone/.keep
+      echo 'ok' | mc pipe local/ml/features/.keep
+      echo 'ok' | mc pipe local/ml/models/demand_v1/.keep
+      echo '--- MinIO buckets ready ---'
+      mc ls local/
+      "
+    restart: on-failure
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 3. CASSANDRA 4.1
-  #
-  # CQL shell → docker exec -it cassandra cqlsh
-  # Init DB   → docker exec -i cassandra cqlsh < db/cassandra_init.cql
-  # NOTE: Cassandra takes 60-90 s to become ready — start_period is correct.
-  # ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 3. CASSANDRA
+# ---------------------------------------------------------------------------
   cassandra:
     image: cassandra:4.1
-    container_name: cassandra
+    container_name: taasim-cassandra
     hostname: cassandra
     networks:
-      - taasim-network
+      - taasim
     ports:
       - "9042:9042"
     environment:
-      CASSANDRA_CLUSTER_NAME: taasim-cluster
-      CASSANDRA_DC: datacenter1
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+      CASSANDRA_CLUSTER_NAME: TaaSim
+      CASSANDRA_DC: dc1
       CASSANDRA_RACK: rack1
-      MAX_HEAP_SIZE: 512M                   # task01 spec — dev workstation
-      HEAP_NEWSIZE: 128M                    # task01 spec
     volumes:
-      - cassandra-data:/var/lib/cassandra
+      - cassandra_data:/var/lib/cassandra
     healthcheck:
-      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' 2>/dev/null || exit 1"]
-      start_period: 90s
-      interval: 30s
-      timeout: 15s
-      retries: 10
-    restart: unless-stopped
+      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' > /dev/null 2>&1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 4. FLINK 1.17 — Job Manager
-  #
-  # Web UI → http://localhost:8081
-  #
-  # S3A SETUP (two steps the base image does NOT do automatically):
-  #   Step 1 — PLUGIN: copy flink-s3-fs-hadoop from /opt/flink/opt/
-  #            to /opt/flink/plugins/flink-s3-fs-hadoop/ at startup.
-  #            Without this, every s3:// URI raises ClassNotFoundException.
-  #   Step 2 — CONFIG: use Flink's own s3.* namespace in FLINK_PROPERTIES.
-  #            AWS_* env vars are ignored by Flink's S3A driver.
-  # ─────────────────────────────────────────────────────────────────────────────
+  # Bootstrap keyspace + tables
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: taasim-cassandra-init
+    networks:
+      - taasim
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: |
+      "
+      cqlsh cassandra 9042 -e \"
+        CREATE KEYSPACE IF NOT EXISTS taasim
+          WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+
+        USE taasim;
+
+        CREATE TABLE IF NOT EXISTS vehicle_positions (
+          city       TEXT,
+          zone_id    INT,
+          event_time TIMESTAMP,
+          taxi_id    TEXT,
+          lat        DOUBLE,
+          lon        DOUBLE,
+          speed      DOUBLE,
+          status     TEXT,
+          PRIMARY KEY ((city, zone_id), event_time)
+        ) WITH CLUSTERING ORDER BY (event_time DESC)
+          AND default_time_to_live = 300;
+
+        CREATE TABLE IF NOT EXISTS trips (
+          city        TEXT,
+          date_bucket TEXT,
+          created_at  TIMESTAMP,
+          trip_id     UUID,
+          rider_id    TEXT,
+          taxi_id     TEXT,
+          origin_zone INT,
+          dest_zone   INT,
+          status      TEXT,
+          fare        DECIMAL,
+          eta_seconds INT,
+          PRIMARY KEY ((city, date_bucket), created_at, trip_id)
+        ) WITH CLUSTERING ORDER BY (created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS demand_zones (
+          city             TEXT,
+          zone_id          INT,
+          window_start     TIMESTAMP,
+          active_vehicles  INT,
+          pending_requests INT,
+          ratio            DOUBLE,
+          forecast_demand  DOUBLE,
+          PRIMARY KEY ((city, zone_id), window_start)
+        ) WITH CLUSTERING ORDER BY (window_start DESC)
+          AND default_time_to_live = 3600;
+      \"
+      echo '--- Cassandra schema applied ---'
+      "
+    restart: on-failure
+
+# ---------------------------------------------------------------------------
+# 4. APACHE FLINK — 1 JobManager + 1 TaskManager
+# ---------------------------------------------------------------------------
   flink-jobmanager:
-    image: flink:1.17-scala_2.12-java11
-    container_name: flink-jobmanager
+    image: flink:1.18-scala_2.12-java11
+    container_name: taasim-flink-jm
     hostname: flink-jobmanager
     networks:
-      - taasim-network
+      - taasim
     ports:
       - "8081:8081"
-    command: >
-      bash -c "
-        mkdir -p /opt/flink/plugins/flink-s3-fs-hadoop &&
-        cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar
-           /opt/flink/plugins/flink-s3-fs-hadoop/ &&
-        /docker-entrypoint.sh jobmanager
-      "
+    command: jobmanager
     environment:
-      # Must be a map entry (FLINK_PROPERTIES: |) — NOT a list item (- |).
-      # Each indented line is one Flink config property.
+      <<: *s3a-env
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
-        jobmanager.memory.process.size: 1024m
-        rest.port: 8081
-        s3.access-key: admin
-        s3.secret-key: password123
-        s3.endpoint: http://minio:9000
-        s3.path.style.access: true
+        jobmanager.memory.process.size: 1600m
         state.backend: rocksdb
-        state.checkpoints.dir: s3://taasim/flink-checkpoints/
+        state.checkpoints.dir: s3a://kafka-archive/flink-checkpoints
+        state.savepoints.dir: s3a://kafka-archive/flink-savepoints
         execution.checkpointing.interval: 60000
         execution.checkpointing.mode: AT_LEAST_ONCE
-        execution.checkpointing.min-pause: 30000
-        restart-strategy: fixed-delay
-        restart-strategy.fixed-delay.attempts: 3
-        restart-strategy.fixed-delay.delay: 10s
-    depends_on:
-      minio:
-        condition: service_healthy
+        s3.endpoint: http://minio:9000
+        s3.path-style-access: true
+        s3.access-key: minioadmin
+        s3.secret-key: minioadmin
+    volumes:
+      - flink_checkpoints:/tmp/flink-checkpoints
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
-      start_period: 30s
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview > /dev/null"]
       interval: 15s
-      timeout: 10s
-      retries: 5
-    restart: unless-stopped
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
-  # ─── 4b. FLINK 1.17 — Task Manager ────────────────────────────────────────
-  # 4 slots — sufficient for 3 concurrent Flink jobs (brief §9.1)
   flink-taskmanager:
-    image: flink:1.17-scala_2.12-java11
-    container_name: flink-taskmanager
+    image: flink:1.18-scala_2.12-java11
+    container_name: taasim-flink-tm
     hostname: flink-taskmanager
     networks:
-      - taasim-network
-    command: >
-      bash -c "
-        mkdir -p /opt/flink/plugins/flink-s3-fs-hadoop &&
-        cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar
-           /opt/flink/plugins/flink-s3-fs-hadoop/ &&
-        /docker-entrypoint.sh taskmanager
-      "
-    environment:
-      FLINK_PROPERTIES: |
-        jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 4
-        taskmanager.memory.process.size: 1728m
-        s3.access-key: admin
-        s3.secret-key: password123
-        s3.endpoint: http://minio:9000
-        s3.path.style.access: true
-        state.backend: rocksdb
-        state.checkpoints.dir: s3://taasim/flink-checkpoints/
+      - taasim
+    command: taskmanager
     depends_on:
       flink-jobmanager:
         condition: service_healthy
-    restart: unless-stopped
+    environment:
+      <<: *s3a-env
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.memory.process.size: 1728m
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: rocksdb
+        state.checkpoints.dir: s3a://kafka-archive/flink-checkpoints
+        s3.endpoint: http://minio:9000
+        s3.path-style-access: true
+        s3.access-key: minioadmin
+        s3.secret-key: minioadmin
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 5. SPARK 3.5.0 — Master
-  #
-  # Web UI → http://localhost:8080
-  # RPC    → spark://spark-master:7077
-  #
-  # IMAGE: Uses taasim/spark:3.5.0 built from Dockerfile.spark.
-  #   WHY custom image: bitnami/spark short tags (3.4, 3.5.0) do not exist on
-  #   Docker Hub. The official apache/spark-py:3.5.0 exists and is stable, but
-  #   needs hadoop-aws JARs added — exactly what task01 recommends:
-  #   "add it to the image via a custom Dockerfile layer."
-  #
-  # S3A: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are picked up by Hadoop's
-  #   DefaultAWSCredentialsProviderChain. The endpoint and path-style settings
-  #   live in config/spark-defaults.conf (cannot be set via env vars).
-  # ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 5. APACHE SPARK — Master + 1 Worker
+# ---------------------------------------------------------------------------
   spark-master:
-    build:
-      context: .
-      dockerfile: Dockerfile.spark
-    image: taasim/spark:3.5.0              # built locally; cached after first run
-    container_name: spark-master
+    image: docker.io/apache/spark:3.5.0
+    container_name: taasim-spark-master
     hostname: spark-master
     networks:
-      - taasim-network
+      - taasim
     ports:
-      - "8080:8080"                        # Spark Master Web UI
-      - "7077:7077"                        # Spark RPC (spark-submit, workers)
-    command: >
-      /opt/spark/bin/spark-class
-      org.apache.spark.deploy.master.Master
-      --host spark-master
-      --port 7077
-      --webui-port 8080
+      - "8080:8080"   # Master UI
+      - "7077:7077"   # Spark Master port
     environment:
-      AWS_ACCESS_KEY_ID: admin
-      AWS_SECRET_ACCESS_KEY: password123
-    volumes:
-      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      SPARK_MODE: master
+      SPARK_MASTER_HOST: spark-master
+      # S3A / MinIO
+      SPARK_EXTRA_CLASSPATH: /opt/bitnami/spark/jars/hadoop-aws-3.3.4.jar:/opt/bitnami/spark/jars/aws-java-sdk-bundle-1.12.262.jar
+      SPARK_CONF_spark_hadoop_fs_s3a_endpoint: http://minio:9000
+      SPARK_CONF_spark_hadoop_fs_s3a_access_key: minioadmin
+      SPARK_CONF_spark_hadoop_fs_s3a_secret_key: minioadmin
+      SPARK_CONF_spark_hadoop_fs_s3a_path_style_access: "true"
+      SPARK_CONF_spark_hadoop_fs_s3a_impl: org.apache.hadoop.fs.s3a.S3AFileSystem
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
-      start_period: 20s
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080 > /dev/null"]
       interval: 15s
-      timeout: 10s
-      retries: 5
-    restart: unless-stopped
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
-  # ─── 5b. SPARK 3.5.0 — Worker ─────────────────────────────────────────────
-  # 2 cores / 2 GB — handles Porto 1.7M rows ETL and NYC TLC 30M rows
   spark-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.spark
-    image: taasim/spark:3.5.0             # same image as master (reuses cache)
-    container_name: spark-worker
+    image: docker.io/apache/spark:3.5.0
+    container_name: taasim-spark-worker
     hostname: spark-worker
     networks:
-      - taasim-network
+      - taasim
     depends_on:
       spark-master:
         condition: service_healthy
-    command: >
-      /opt/spark/bin/spark-class
-      org.apache.spark.deploy.worker.Worker
-      spark://spark-master:7077
-      --cores 2
-      --memory 2g
-      --webui-port 8082
     environment:
-      AWS_ACCESS_KEY_ID: admin
-      AWS_SECRET_ACCESS_KEY: password123
-    volumes:
-      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
-    restart: unless-stopped
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 2G
+      SPARK_WORKER_CORES: 2
+      SPARK_CONF_spark_hadoop_fs_s3a_endpoint: http://minio:9000
+      SPARK_CONF_spark_hadoop_fs_s3a_access_key: minioadmin
+      SPARK_CONF_spark_hadoop_fs_s3a_secret_key: minioadmin
+      SPARK_CONF_spark_hadoop_fs_s3a_path_style_access: "true"
+      SPARK_CONF_spark_hadoop_fs_s3a_impl: org.apache.hadoop.fs.s3a.S3AFileSystem
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 6. GRAFANA 10.0.0
-  #
-  # Web UI → http://localhost:3000  (admin / admin — task01 spec)
-  # Plugin hadesarchitect-cassandra-datasource auto-installed on first boot.
-  # ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 6. GRAFANA
+# ---------------------------------------------------------------------------
   grafana:
-    image: grafana/grafana:10.0.0
-    container_name: grafana
+    image: grafana/grafana:10.4.2
+    container_name: taasim-grafana
     hostname: grafana
     networks:
-      - taasim-network
+      - taasim
     ports:
       - "3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_INSTALL_PLUGINS: hadesarchitect-cassandra-datasource
-      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
     volumes:
-      - grafana-data:/var/lib/grafana
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning   # optional: pre-provision datasources
     depends_on:
       cassandra:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      start_period: 30s
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health > /dev/null"]
       interval: 15s
-      timeout: 10s
-      retries: 5
-    restart: unless-stopped
+      timeout: 5s
+      retries: 10
+      start_period: 30s
