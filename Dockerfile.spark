@@ -1,0 +1,38 @@
+# =============================================================================
+# Dockerfile.spark
+# Custom Spark image for TaaSim — apache/spark-py:3.5.0 + S3A / MinIO support
+#
+# Why this file exists (task01 hint):
+#   "Mount the hadoop-aws JAR into their containers OR add it to the image
+#    via a custom Dockerfile layer." — we chose the Dockerfile approach so the
+#    JARs are baked in and the image is fully self-contained.
+#
+# Build (done automatically by docker compose up --build):
+#   docker build -f Dockerfile.spark -t taasim/spark:3.5.0 .
+# =============================================================================
+
+FROM apache/spark-py:3.5.0
+
+USER root
+
+# Install curl (needed for healthchecks inside the container)
+RUN apt-get update -q \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── S3A JARs ─────────────────────────────────────────────────────────────────
+# Spark 3.5.0 ships with Hadoop 3.3.4.
+# hadoop-aws and aws-java-sdk-bundle MUST match the bundled Hadoop version.
+# Versions below are the correct pair for Hadoop 3.3.4.
+ARG HADOOP_AWS_VERSION=3.3.4
+ARG AWS_SDK_VERSION=1.12.262
+ARG MVN=https://repo1.maven.org/maven2
+
+RUN curl -fSL -o /opt/spark/jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
+        ${MVN}/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
+ && curl -fSL -o /opt/spark/jars/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar \
+        ${MVN}/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar \
+ && echo "S3A JARs installed:" \
+ && ls -lh /opt/spark/jars/hadoop-aws-* /opt/spark/jars/aws-java-sdk-bundle-*
+
+USER spark
