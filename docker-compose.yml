@@ -83,6 +83,24 @@ services:
     restart: on-failure
 
 # ---------------------------------------------------------------------------
+# 1b. KAFKA UI — Web UI for browsing topics/messages
+# ---------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: taasim-kafka-ui
+    hostname: kafka-ui
+    networks:
+      - taasim
+    ports:
+      - "8083:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: taasim
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+# ---------------------------------------------------------------------------
 # 2. MINIO — S3-compatible object store
 # ---------------------------------------------------------------------------
   minio:
@@ -412,6 +430,34 @@ services:
     volumes:
       - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
+
+# ---------------------------------------------------------------------------
+# 5b. JUPYTER — PySpark notebooks (driver) connected to Spark master
+# ---------------------------------------------------------------------------
+  jupyter:
+    image: quay.io/jupyter/pyspark-notebook:spark-3.5.0
+    container_name: taasim-jupyter
+    hostname: jupyter
+    networks:
+      - taasim
+    ports:
+      - "8888:8888"
+    environment:
+      SPARK_MASTER: spark://spark-master:7077
+      PYSPARK_SUBMIT_ARGS: "--master spark://spark-master:7077 pyspark-shell"
+      SPARK_CONF_DIR: /opt/spark-conf
+      JUPYTER_TOKEN: taasim
+    volumes:
+      - ./notebooks/notebook-spark:/home/jovyan/work
+      - ./conf/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
+      - s3a_jars:/opt/extra-jars:ro
+    depends_on:
+      spark-master:
+        condition: service_healthy
+      s3a-jars:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
 
 # ---------------------------------------------------------------------------
 # 6. GRAFANA
