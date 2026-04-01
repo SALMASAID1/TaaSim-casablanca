@@ -132,6 +132,7 @@ services:
       - taasim
     volumes:
       - ./raw:/seed/raw:ro
+      - ./metadata:/seed/metadata:ro
     depends_on:
       minio:
         condition: service_healthy
@@ -154,6 +155,8 @@ services:
 
         echo 'ok' | mc pipe local/taasim/ml/features/.keep
         echo 'ok' | mc pipe local/taasim/ml/models/demand_v1/.keep
+
+        echo 'ok' | mc pipe local/taasim/metadata/.keep
 
         # -------------------------------------------------------------------
         # Optional: seed MinIO from local workspace datasets (mounted read-only)
@@ -190,6 +193,17 @@ services:
           fi
         else
           echo '--- No local NYC TLC dataset found at ./raw/nyc-tlc/*.parquet; skipping seed ---'
+        fi
+
+        if [ -f /seed/metadata/zone_mapping.csv ]; then
+          if ! mc stat local/taasim/metadata/zone_mapping.csv >/dev/null 2>&1; then
+            echo '--- Seeding zone mapping into MinIO (metadata/zone_mapping.csv) ---'
+            mc cp /seed/metadata/zone_mapping.csv local/taasim/metadata/zone_mapping.csv
+          else
+            echo '--- zone_mapping.csv already present in MinIO ---'
+          fi
+        else
+          echo '--- No local zone_mapping.csv found at ./metadata/zone_mapping.csv; skipping seed ---'
         fi
 
         echo '--- MinIO bucket + prefixes ready ---'
@@ -498,6 +512,7 @@ services:
       JUPYTER_TOKEN: taasim
     volumes:
       - ./notebooks/notebook-spark:/home/jovyan/work
+      - ./docs/:/home/jovyan/data
       - ./conf/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
     depends_on:
