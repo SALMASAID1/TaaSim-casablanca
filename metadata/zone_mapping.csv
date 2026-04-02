@@ -1,4 +1,4 @@
-zone_id,zone_name,lon_min,lon_max,lat_min,lat_max
+arrondissement_id,zone_name,lon_min,lon_max,lat_min,lat_max
 1,Sidi Belyout,-7.625,-7.595,33.590,33.620
 2,Maarif,-7.660,-7.615,33.565,33.595
 3,Anfa,-7.710,-7.660,33.585,33.630

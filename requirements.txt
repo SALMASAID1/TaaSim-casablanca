@@ -1,0 +1,11 @@
+# Core Data Processing 
+pyspark==3.5.0
+pandas==2.2.2
+pyarrow==15.0.2
+numpy==1.26.4
+
+# Kafka Streaming 
+kafka-python==2.0.2
+
+fsspec
+s3fs
