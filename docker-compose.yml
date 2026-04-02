@@ -61,6 +61,7 @@ services:
       retries: 10
       start_period: 30s
 
+
   kafka-init:
     image: confluentinc/cp-kafka:7.6.1
     container_name: taasim-kafka-init
