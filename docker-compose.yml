@@ -51,6 +51,7 @@ services:
       timeout: 10s
       retries: 10
 
+
   kafka-init:
     image: confluentinc/cp-kafka:7.6.1
     container_name: taasim-kafka-init
