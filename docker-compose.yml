@@ -229,28 +229,27 @@ services:
     command:
       - |
         set -e
+        # Kafka Connector
+        if [ ! -s "/jars/flink-sql-connector-kafka-3.1.0-1.18.jar" ]; then
+          curl -fLSL --retry 3 -o "/jars/flink-sql-connector-kafka-3.1.0-1.18.jar" "https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.1.0-1.18/flink-sql-connector-kafka-3.1.0-1.18.jar"
+        fi
+        # Cassandra Connector
+        if [ ! -s "/jars/flink-connector-cassandra_2.12-3.2.0-1.18.jar" ]; then
+          curl -fLSL --retry 3 -o "/jars/flink-connector-cassandra_2.12-3.2.0-1.18.jar" "https://repo1.maven.org/maven2/org/apache/flink/flink-connector-cassandra_2.12/3.2.0-1.18/flink-connector-cassandra_2.12-3.2.0-1.18.jar"
+        fi
+        # Hadoop/S3 Jars
         if [ ! -s "/jars/hadoop-aws-3.3.4.jar" ]; then
-          echo "Downloading hadoop-aws-3.3.4.jar"
-          curl -fL --retry 5 --retry-delay 2 \
-            -o "/jars/hadoop-aws-3.3.4.jar" \
-            "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar"
+          curl -fLSL -o "/jars/hadoop-aws-3.3.4.jar" "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar"
         fi
-
         if [ ! -s "/jars/aws-java-sdk-bundle-1.12.262.jar" ]; then
-          echo "Downloading aws-java-sdk-bundle-1.12.262.jar"
-          curl -fL --retry 5 --retry-delay 2 \
-            -o "/jars/aws-java-sdk-bundle-1.12.262.jar" \
-            "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar"
+          curl -fLSL -o "/jars/aws-java-sdk-bundle-1.12.262.jar" "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar"
         fi
-
         mkdir -p /jars/s3-fs-hadoop
         cp -f "/jars/hadoop-aws-3.3.4.jar" /jars/s3-fs-hadoop/
         cp -f "/jars/aws-java-sdk-bundle-1.12.262.jar" /jars/s3-fs-hadoop/
         chmod -R a+rX /jars
-        echo "--- S3A jars ready ---"
-        ls -1 /jars | sed -n '1,50p'
+        echo "--- All JARs Downloaded Successfully ---"
     restart: on-failure
-
 # ---------------------------------------------------------------------------
 # 3. CASSANDRA
 # ---------------------------------------------------------------------------
@@ -263,18 +262,23 @@ services:
     ports:
       - "9042:9042"
     environment:
-      MAX_HEAP_SIZE: 512M
-      HEAP_NEWSIZE: 128M
+      MAX_HEAP_SIZE: 1G
+      HEAP_NEWSIZE: 256M
       CASSANDRA_CLUSTER_NAME: TaaSim
       CASSANDRA_DC: dc1
       CASSANDRA_RACK: rack1
     volumes:
       - cassandra_data:/var/lib/cassandra
+
+    depends_on:
+      s3a-jars:
+          condition: service_completed_successfully
+
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' > /dev/null 2>&1"]
       interval: 20s
       timeout: 10s
-      retries: 15
+      retries: 10
       start_period: 60s
 
   cassandra-init:
@@ -289,6 +293,11 @@ services:
     command:
       - |
         set -e
+        until cqlsh cassandra 9042 -e "describe cluster" > /dev/null 2>&1; do
+          echo "Waiting for Cassandra..."
+          sleep 5
+        done
+
         cqlsh cassandra 9042 <<'CQL'
         CREATE KEYSPACE IF NOT EXISTS taasim
           WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
@@ -373,10 +382,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview > /dev/null"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 12
+      start_period: 20s
 
   flink-taskmanager:
     image: flink:1.18.1-scala_2.12-java11
@@ -460,40 +469,41 @@ services:
     networks:
       - taasim
     ports:
-      - "8082:8082"   # Worker Web UI (8081 is taken by Flink)
-    entrypoint: ["/usr/local/spark/bin/spark-class"]
-    command:
-      - org.apache.spark.deploy.worker.Worker
-      - --cores
-      - "2"
-      - --memory
-      - "2g"
-      - --work-dir
-      - /tmp/spark-work
-      - --webui-port
-      - "8082"
-      - spark://spark-master:7077
-    depends_on:
-      spark-master:
-        condition: service_healthy
-      s3a-jars:
-        condition: service_completed_successfully
+      - "8082:8082"
     environment:
+      SPARK_WORKER_DIR: /tmp/spark-work
       SPARK_WORKER_CORES: "2"
       SPARK_WORKER_MEMORY: "2g"
       SPARK_WORKER_WEBUI_PORT: "8082"
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       PYSPARK_PYTHON: python3
+    
+    entrypoint: ["/usr/local/spark/bin/spark-class"]
+    command: ["org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--webui-port", "8082"]
     volumes:
-      - ./conf/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
+      - ./conf/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8082 > /dev/null"]
-      interval: 15s
+      test:
+        - "CMD-SHELL"
+        - >-
+          python -c "import urllib.request; urllib.request.urlopen('http://spark-worker:8082',timeout=2).read(1)"
+      interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 12
+      start_period: 25s
+    depends_on:
+      spark-master:
+        condition: service_healthy
+      s3a-jars:
+        condition: service_completed_successfully
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -sf http://localhost:8082 > /dev/null"]
+    #   interval: 15s
+    #   timeout: 5s
+    #   retries: 10
+    #   start_period: 30s
 
 # ---------------------------------------------------------------------------
 # 5b. JUPYTER — PySpark notebooks (driver) connected to Spark master
@@ -516,6 +526,7 @@ services:
       - ./docs/:/home/jovyan/data
       - ./conf/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
+      - ./conf/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf:ro
     depends_on:
       spark-master:
         condition: service_healthy
