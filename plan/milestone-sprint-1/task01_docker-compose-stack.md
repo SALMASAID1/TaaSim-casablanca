@@ -11,14 +11,15 @@ Provision and health-check all six services (Kafka KRaft, MinIO, Cassandra, Flin
 via Docker Compose so that every component is reachable from the host and from other containers.
 
 ## Acceptance Criteria
-- [ ] `docker compose up -d` starts all services with no exit codes
-- [ ] Kafka: `kafka-topics.sh --bootstrap-server localhost:9092 --list` returns without error
-- [ ] MinIO: `mc ls local/` returns bucket listing (MinIO Client configured)
-- [ ] Cassandra: `cqlsh localhost 9042` opens a CQL shell
-- [ ] Flink: Job Manager UI accessible at `http://localhost:8081`
-- [ ] Spark: Master UI accessible at `http://localhost:8080`
-- [ ] Grafana: UI accessible at `http://localhost:3000` (admin/admin)
-- [ ] Screenshot of all containers running committed to repo as `docs/stack-health.png`
+- [x] `docker compose up -d` starts all services with no exit codes
+- [x] Kafka: `kafka-topics.sh --bootstrap-server localhost:9092 --list` returns without error
+- [x] Kafka retention configured: raw topics retained for 7 days (168 hours)
+- [x] MinIO: `mc ls local/` returns bucket listing (MinIO Client configured)
+- [x] Cassandra: `cqlsh localhost 9042` opens a CQL shell
+- [x] Flink: Job Manager UI accessible at `http://localhost:8081`
+- [x] Spark: Master UI accessible at `http://localhost:8080`
+- [x] Grafana: UI accessible at `http://localhost:3000` (admin/admin)
+- [x] Screenshot of all containers running committed to repo as `docs/sprint-1/stack-health.png`
 
 ## Technical Hints
 - Use **Kafka in KRaft mode** (no Zookeeper). Set `KAFKA_PROCESS_ROLES=broker,controller` and
@@ -41,7 +42,7 @@ Founder A
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers

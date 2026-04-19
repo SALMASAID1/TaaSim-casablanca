@@ -14,7 +14,7 @@ Advanced Big Data — Final Capstone · ENSA Al Hoceima · 2025–2026
 |---|---|
 | Course | Advanced Big Data — Final Capstone |
 | School | National School of Applied Sciences — Al Hoceima (ENSAH) |
-| Duration | 6 sprints (compressed from 8-week brief) |
+| Duration | 8 weeks (weekly labs) mapped to 6 sprints |
 | Team | 2 co-founders working in parallel |
 | Tech Stack | Kafka · Spark · Flink · MinIO · Cassandra · Grafana · FastAPI |
 | Datasets | Porto Taxi Trajectories (ECML 2015) + NYC TLC (Kaggle) |
@@ -37,12 +37,26 @@ underscore is a short kebab-case description. Extension is always `.md`.
 
 ---
 
+## Alignment With Official Course Brief (ID2-ABD Capstone 2026)
+
+This plan follows the official brief in `plan/ID2-ABD-Capstone project-2026.txt`.
+The course is structured as an 8-week lab plan; we map it into 6 sprints for execution:
+
+- **Weeks 1–2** → **Sprint 1** (stack + datasets + remapping + producers + storage design + ADR)
+- **Week 3** → **Sprint 2** (Flink Job 1 + watermarks + checkpointing + Grafana vehicle map + API bootstrap)
+- **Week 4** → **Sprint 3** (Flink Job 2/3 + demand heatmap + trip matching + fallback)
+- **Week 5** → **Sprint 4** (Spark ETL + KPIs)
+- **Weeks 6–7** → **Sprint 5** (ML + JWT + Kafka ACLs + HTTPS)
+- **Week 8** → **Sprint 6** (SLA measurements + checkpoint recovery + report + pitch)
+
+---
+
 ## Demo Day Non-Negotiables (5 things that must work)
 
 1. ✅ GPS events: `Kafka → Flink Job 1 → Cassandra → Grafana` vehicle map (live)
-2. ✅ Trip reservation: `POST /api/trips → Flink Job 3 match → Cassandra` ETA < 5 s
+2. ✅ Trip reservation: `POST /api/v1/trips → Flink Job 3 match → Cassandra` ETA < 5 s
 3. ✅ Demand heatmap: `Flink Job 2 → Cassandra demand_zones → Grafana` every 30 s
-4. ✅ ML forecast: `/demand/forecast` responds in < 500 ms
+4. ✅ ML forecast: `POST /api/v1/demand/forecast` responds in < 500 ms
 5. ✅ Anomaly visible: `event_injector.py` demand spike → heatmap surge within 60 s
 
 ---
@@ -61,13 +75,17 @@ underscore is a short kebab-case description. Extension is always `.md`.
 | [task04_porto-casablanca-coordinate-transform.md](milestone-sprint-1/task04_porto-casablanca-coordinate-transform.md) | Founder B | PySpark linear coordinate transform Porto bbox → Casablanca bbox |
 | [task05_vehicle-gps-producer.md](milestone-sprint-1/task05_vehicle-gps-producer.md) | Founder B | Build `vehicle_gps_producer.py`: replay Porto polylines at 10× with GPS noise |
 | [task06_cassandra-keyspace-init.md](milestone-sprint-1/task06_cassandra-keyspace-init.md) | Founder B | Create `taasim` keyspace with `vehicle_positions`, `trips`, `demand_zones` tables |
+| [task07_kafka-connect-s3-archive.md](milestone-sprint-1/task07_kafka-connect-s3-archive.md) | Founder A | Kafka → MinIO archival: mirror raw topics to `raw/kafka-archive/` |
+| [task08_trip-request-producer.md](milestone-sprint-1/task08_trip-request-producer.md) | Founder B | Build `trip_request_producer.py`: reservation events on `raw.trips` |
 
 **Sprint 1 Checklist**
-- [ ] Docker stack screenshot (all services green)
-- [ ] Jupyter data-profiling notebook committed
-- [ ] Zone-remapped trips visualised on Casablanca map
-- [ ] Kafka consumer shows GPS events flowing
-- [ ] 1-slide startup concept
+- [x] Docker stack screenshot (all services green) — `docs/sprint-1/stack-health.png`
+- [x] Jupyter data-profiling notebook committed — `notebooks/notebook-spark/01_data_exploration.ipynb`
+- [x] Zone-remapped trips visualised on Casablanca map — `docs/sprint-1/casablanca-coordinate-validation.png`
+- [x] GPS + trip events flowing in Kafka (`raw.gps`, `raw.trips`) — evidenced via MinIO archive in `docs/sprint-1/kafka-connect-s3-archive.md`
+- [x] MinIO `raw/kafka-archive/` receives Kafka topic mirrors (Kafka Connect S3 Sink)
+- [x] ADR submitted (storage + Cassandra partition key rationale) — `docs/adr/adr-001-cassandra-schema.md`
+- [ ] Team name chosen + 1-slide startup concept
 
 ---
 
@@ -100,8 +118,7 @@ underscore is a short kebab-case description. Extension is always `.md`.
 | [task01_flink-job2-demand-aggregator.md](milestone-sprint-3/task01_flink-job2-demand-aggregator.md) | Founder A | Flink Job 2: 30-second tumbling window per zone, compute supply/demand ratio |
 | [task02_flink-job3-trip-matcher.md](milestone-sprint-3/task02_flink-job3-trip-matcher.md) | Founder A | Flink Job 3: stateful trip matching, ETA computation, RocksDB state backend |
 | [task03_grafana-demand-heatmap.md](milestone-sprint-3/task03_grafana-demand-heatmap.md) | Founder B | Grafana Geomap heatmap panel: colour intensity = demand ratio per zone |
-| [task04_trip-request-producer.md](milestone-sprint-3/task04_trip-request-producer.md) | Founder B | Build `trip_request_producer.py` following Porto hourly demand curve |
-| [task05_zone-adjacent-fallback.md](milestone-sprint-3/task05_zone-adjacent-fallback.md) | Founder B | Job 3 fallback: expand search to adjacent zones if same-zone empty within 5 s |
+| [task04_zone-adjacent-fallback.md](milestone-sprint-3/task04_zone-adjacent-fallback.md) | Founder B | Job 3 fallback: expand search to adjacent zones if same-zone empty within 5 s |
 
 **Sprint 3 Checklist**
 - [ ] End-to-end: reserve → match → ETA < 5 s (measured)
@@ -141,12 +158,14 @@ underscore is a short kebab-case description. Extension is always `.md`.
 | [task03_spark-ml-feature-engineering.md](milestone-sprint-5/task03_spark-ml-feature-engineering.md) | Founder B | Spark feature engineering: temporal, spatial, weather, and lag features |
 | [task04_gbt-model-training-validation.md](milestone-sprint-5/task04_gbt-model-training-validation.md) | Founder B | Train GBTRegressor, temporal split, beat naive baseline, save PipelineModel |
 | [task05_fastapi-demand-forecast-endpoint.md](milestone-sprint-5/task05_fastapi-demand-forecast-endpoint.md) | Founder B | `POST /api/v1/demand/forecast`: load model at startup, respond < 500 ms |
+| [task06_fastapi-https.md](milestone-sprint-5/task06_fastapi-https.md) | Founder A | Enable HTTPS on FastAPI (self-signed cert acceptable for demo) |
 
 **Sprint 5 Checklist**
 - [ ] JWT auth working on all endpoints
 - [ ] Model RMSE beats naive 7-day-lag baseline (per-zone comparison table)
 - [ ] Feature importance chart explaining top 3 predictors
-- [ ] `/demand/forecast` responds in < 500 ms (Locust result)
+- [ ] `POST /api/v1/demand/forecast` responds in < 500 ms (Locust result)
+- [ ] HTTPS enabled on FastAPI (self-signed cert acceptable)
 - [ ] Kafka ACLs verified
 
 ---
@@ -165,9 +184,9 @@ underscore is a short kebab-case description. Extension is always `.md`.
 
 **Sprint 6 Demo Day Checklist**
 - [ ] GPS events: Kafka → Flink Job 1 → Cassandra → Grafana map (live)
-- [ ] Trip reservation: `POST /api/trips` → match in Cassandra with ETA < 5 s
+- [ ] Trip reservation: `POST /api/v1/trips` → match in Cassandra with ETA < 5 s
 - [ ] Demand heatmap: Job 2 → Cassandra → Grafana updating every 30 s
-- [ ] ML forecast: `/demand/forecast` responds in < 500 ms
+- [ ] ML forecast: `POST /api/v1/demand/forecast` responds in < 500 ms
 - [ ] Anomaly visible: demand spike → heatmap surge within 60 s
 - [ ] Checkpoint recovery demonstrated (screen recording)
 - [ ] Technical report submitted (12–15 pages)

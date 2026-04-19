@@ -1,4 +1,13 @@
-\raw
-\plan
-\venv
-\docs
+# Local Python environment
+venv/
+.env
+
+# Large local datasets (kept in MinIO for the project)
+raw/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/

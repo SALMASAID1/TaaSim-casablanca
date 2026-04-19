@@ -8,21 +8,21 @@ input. The deliberate GPS noise and blackout simulation are also required so tha
 test watermark handling with realistic late-event conditions.
 
 ## Objective
-Build `producers/vehicle_gps_producer.py` that replays Porto GPS polylines at 10× speed through
+Build `src/producers/vehicle_gps_producer.py` that replays Porto GPS polylines at 10× speed through
 Kafka topic `raw.gps`, adding Gaussian coordinate noise and simulating 5% per-vehicle blackout
 probability.
 
 ## Acceptance Criteria
-- [ ] Script reads Porto `train.csv` from `s3a://taasim/raw/porto-trips/` (or local path via CLI arg)
-- [ ] Kafka messages published to topic `raw.gps` with key = `taxi_id`
-- [ ] Payload fields present: `taxi_id`, `timestamp` (event time ISO-8601), `lat`, `lon`, `speed`, `status`
-- [ ] Coordinates have been transformed to Casablanca bounding box (reuses task04 function)
-- [ ] Gaussian noise applied: σ ≈ 0.0002 degrees (≈ 20 m)
-- [ ] Blackout simulation: with 5% probability per vehicle per event, Kafka send is delayed by
+- [x] Script reads Porto `train.csv` from `s3a://taasim/raw/porto-trips/` (or local path via CLI arg)
+- [x] Kafka messages published to topic `raw.gps` with key = `taxi_id`
+- [x] Payload fields present: `taxi_id`, `timestamp` (event time ISO-8601), `lat`, `lon`, `speed`, `status`
+- [x] Coordinates have been transformed to Casablanca bounding box (reuses task04 function)
+- [x] Gaussian noise applied: σ ≈ 0.0002 degrees (≈ 20 m)
+- [x] Blackout simulation: with 5% probability per vehicle per event, Kafka send is delayed by
   60–180 seconds (random uniform), producing out-of-order events in the topic
-- [ ] Replay speed configurable via `--speed` CLI argument (default: 10×)
-- [ ] `kafka-console-consumer --topic raw.gps` shows valid JSON messages flowing
-- [ ] Script is runnable with `python producers/vehicle_gps_producer.py --speed 10`
+- [x] Replay speed configurable via `--speed` CLI argument (default: 10×)
+- [x] `kafka-console-consumer --topic raw.gps` shows valid JSON messages flowing
+- [x] Script is runnable with `python -m src.producers.vehicle_gps_producer --speed 10`
 
 ## Technical Hints
 - Parse Porto `POLYLINE` column (JSON array of `[lon, lat]` pairs) and iterate coordinates.
@@ -46,7 +46,7 @@ Founder B
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers

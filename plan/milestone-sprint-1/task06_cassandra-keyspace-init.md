@@ -12,16 +12,16 @@ Create the Cassandra keyspace `taasim` and deploy the three required tables (`ve
 `trips`, `demand_zones`) with documented partition key rationale.
 
 ## Acceptance Criteria
-- [ ] Keyspace `taasim` created with `replication = {'class': 'SimpleStrategy', 'replication_factor': 1}`
-- [ ] Table `vehicle_positions` created with partition key `(city, zone_id)`, clustering key
+- [x] Keyspace `taasim` created with `replication = {'class': 'SimpleStrategy', 'replication_factor': 1}`
+- [x] Table `vehicle_positions` created with partition key `(city, zone_id)`, clustering key
   `event_time DESC`
-- [ ] Table `trips` created with partition key `(city, date_bucket)`, clustering key `created_at DESC`
-- [ ] Table `demand_zones` created with partition key `(city, zone_id)`, clustering key
+- [x] Table `trips` created with partition key `(city, date_bucket)`, clustering key `created_at DESC`
+- [x] Table `demand_zones` created with partition key `(city, zone_id)`, clustering key
   `window_start DESC`
-- [ ] Each table's partition key choice justified in a written comment block within the CQL init file
-- [ ] Init script `db/cassandra_init.cql` committed to the repository
-- [ ] `cqlsh -f db/cassandra_init.cql` runs idempotently (use `IF NOT EXISTS` on all DDL)
-- [ ] A brief Architecture Decision Record (ADR) added to `docs/adr/adr-001-cassandra-schema.md`
+- [x] Each table's partition key choice justified in a written comment block within the CQL init file
+- [x] Init script `db/cassandra_init.cql` committed to the repository
+- [x] `cqlsh -f db/cassandra_init.cql` runs idempotently (use `IF NOT EXISTS` on all DDL)
+- [x] A brief Architecture Decision Record (ADR) added to `docs/adr/adr-001-cassandra-schema.md`
   covering: why `(city, zone_id)` and not `taxi_id`, and why `date_bucket` prevents unbounded
   partition growth
 
@@ -79,7 +79,7 @@ Founder B
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers

@@ -14,15 +14,15 @@ box to the Casablanca bounding box, producing a dataset whose coordinates visual
 Casablanca arrondissements on an OpenStreetMap overlay.
 
 ## Acceptance Criteria
-- [ ] PySpark function `transform_coordinates(lon, lat) → (cas_lon, cas_lat)` implemented and
+- [x] PySpark function `transform_coordinates(lon, lat) → (cas_lon, cas_lat)` implemented and
   unit-tested with at least 5 boundary-point assertions
-- [ ] Full Porto `train.csv` processed: new columns `cas_lon`, `cas_lat`, `arrondissement_id`
+- [x] Full Porto `train.csv` processed: new columns `cas_lon`, `cas_lat`, `arrondissement_id`
   added to each GPS point row
-- [ ] Zone assignment joins correctly against `zone_mapping.csv` (provided in starter kit) — every
+- [x] Zone assignment joins correctly against `zone_mapping.csv` (provided in starter kit) — every
   GPS point receives a valid `arrondissement_id` (1–16) or is tagged `out_of_bounds`
-- [ ] Validation plot: scatter of 10 000 sampled transformed coordinates overlaid on Casablanca
-  OSM map — saved as `docs/casablanca-coordinate-validation.png`
-- [ ] Jupyter notebook `notebooks/01_data_exploration.ipynb` committed with: schema inspection,
+- [x] Validation plot: scatter of 10 000 sampled transformed coordinates overlaid on Casablanca
+  OSM map — saved as `docs/sprint-1/casablanca-coordinate-validation.png`
+- [x] Jupyter notebook `notebooks/notebook-spark/01_data_exploration.ipynb` committed with: schema inspection,
   trip duration distribution histogram, call-type breakdown (A/B/C), temporal demand curve
   (trips per hour of day)
 
@@ -47,7 +47,7 @@ Founder B
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers

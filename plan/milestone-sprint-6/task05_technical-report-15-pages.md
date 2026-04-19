@@ -17,7 +17,7 @@ metrics.
 - [ ] **Section 1 — Architecture**: full system diagram, Kappa vs Lambda justification, component
   roles table (one row per service in the tech stack)
 - [ ] **Section 2 — Dataset Remapping**: Porto → Casablanca coordinate transform methodology,
-  zone mapping table (all 16 arrondissements), validation plot (`docs/casablanca-coordinate-validation.png`)
+  zone mapping table (all 16 arrondissements), validation plot (`docs/sprint-1/casablanca-coordinate-validation.png`)
 - [ ] **Section 3 — ML Evaluation**: per-zone RMSE comparison table (GBT model vs naive 7-day
   baseline), feature importance chart, explanation of top 3 predictors in business terms
 - [ ] **Section 4 — NFR Measurement**: completed SLA table from task02 with actual measured

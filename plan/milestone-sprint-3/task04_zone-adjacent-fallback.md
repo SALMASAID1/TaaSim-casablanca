@@ -1,4 +1,4 @@
-# task05 — Zone Adjacent-Zone Fallback in Job 3
+# task04 — Zone Adjacent-Zone Fallback in Job 3
 
 ## Context
 In low-density hours or underserved peripheral arrondissements (Bouskoura, Ain Sebaâ, Sidi
@@ -42,7 +42,7 @@ and an `unmatched` event is only emitted if all adjacent zones are also empty.
       return R * 2 * math.asin(math.sqrt(a))
   ```
 - Adjacent zone search should still respect the 5-second SLA window — do not restart the timer.
-- Reference: project brief §3.3 Flink Processing Jobs (Job 3 row), §9.3 Flink Jobs (Job 3 hints).
+- Reference: course brief §3.3 (Job 3) and §9.3 (Flink Jobs).
 
 ## Assigned To
 Founder B

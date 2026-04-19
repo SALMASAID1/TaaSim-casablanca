@@ -12,15 +12,15 @@ Create and document the four-zone MinIO bucket structure (`raw/`, `curated/`, `m
 container running a PySpark shell.
 
 ## Acceptance Criteria
-- [ ] Bucket `taasim` created with the following prefixes present: `raw/porto-trips/`,
+- [x] Bucket `taasim` created with the following prefixes present: `raw/porto-trips/`,
   `raw/nyc-tlc/`, `raw/kafka-archive/`, `curated/trips/`, `curated/demand-by-zone/`,
   `ml/features/`, `ml/models/demand_v1/`
-- [ ] Porto CSV files uploaded to `raw/porto-trips/` (at least a 10 000-row sample for early testing)
-- [ ] NYC TLC Parquet for 1 month uploaded to `raw/nyc-tlc/`
-- [ ] `mc ls local/taasim --recursive` lists all prefixes
-- [ ] PySpark snippet `spark.read.csv("s3a://taasim/raw/porto-trips/")` succeeds inside a Spark
+- [x] Porto CSV files uploaded to `raw/porto-trips/` (at least a 10 000-row sample for early testing)
+- [x] NYC TLC Parquet for 1 month uploaded to `raw/nyc-tlc/`
+- [x] `mc ls local/taasim --recursive` lists all prefixes
+- [x] PySpark snippet `spark.read.csv("s3a://taasim/raw/porto-trips/")` succeeds inside a Spark
   container shell (confirms S3A connector wired correctly)
-- [ ] Bucket structure diagram committed to `docs/minio-layout.md`
+- [x] Bucket structure diagram committed to `docs/sprint-1/minio-layout.md`
 
 ## Technical Hints
 - Create bucket and prefixes with MinIO Client:
@@ -49,7 +49,7 @@ Founder A
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers

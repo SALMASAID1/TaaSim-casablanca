@@ -12,11 +12,11 @@ Configure the S3A connector for both Flink and Spark so that both engines can re
 to MinIO using `s3a://taasim/...` paths, and verify with a round-trip read/write test.
 
 ## Acceptance Criteria
-- [ ] Flink job can write a test file to `s3a://taasim/raw/test-flink-write/` using `FileSink`
-- [ ] Spark job can read `s3a://taasim/raw/porto-trips/` and print schema without errors
-- [ ] Spark job can write a Parquet file to `s3a://taasim/curated/test-spark-write/`
-- [ ] No `ClassNotFoundException` for `S3AFileSystem` in either engine's logs
-- [ ] Configuration documented in `docs/s3a-connector-setup.md` with exact JAR versions used
+- [x] Flink job can write a test file to `s3a://taasim/raw/test-flink-write/` using `FileSink`
+- [x] Spark job can read `s3a://taasim/raw/porto-trips/` and print schema without errors
+- [x] Spark job can write a Parquet file to `s3a://taasim/curated/test-spark-write/`
+- [x] No `ClassNotFoundException` for `S3AFileSystem` in either engine's logs
+- [x] Configuration documented in `docs/sprint-1/s3a-connector-setup.md` with exact JAR versions used
 
 ## Technical Hints
 - Required JARs (add to Flink's `lib/` folder and Spark's `jars/` folder):
@@ -42,7 +42,7 @@ Founder A
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers

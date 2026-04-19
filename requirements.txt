@@ -1,11 +1,15 @@
-# Core Data Processing 
+# Core data processing (matches Spark 3.5.x)
 pyspark==3.5.0
 pandas==2.2.2
-pyarrow==15.0.2
 numpy==1.26.4
+pyarrow==15.0.2
 
-# Kafka Streaming 
+# Kafka producer/consumer
 kafka-python==2.0.2
 
-fsspec
-s3fs
+# MinIO/S3 access for Python tooling (pandas/pyarrow via fsspec)
+fsspec==2024.6.1
+s3fs==2024.6.1
+
+# fsspec
+# s3fs

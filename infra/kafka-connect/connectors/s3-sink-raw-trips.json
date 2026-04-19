@@ -1,0 +1,30 @@
+{
+  "connector.class": "io.confluent.connect.s3.S3SinkConnector",
+  "tasks.max": "1",
+  "topics": "raw.trips",
+
+  "s3.bucket.name": "taasim",
+  "s3.region": "${env:AWS_REGION}",
+  "store.url": "${env:AWS_ENDPOINT_URL}",
+  "s3.path.style.access.enabled": "true",
+
+  "aws.access.key.id": "${env:AWS_ACCESS_KEY_ID}",
+  "aws.secret.access.key": "${env:AWS_SECRET_ACCESS_KEY}",
+
+  "storage.class": "io.confluent.connect.s3.storage.S3Storage",
+  "format.class": "io.confluent.connect.s3.format.json.JsonFormat",
+  "topics.dir": "raw/kafka-archive",
+
+  "flush.size": "100",
+  "rotate.interval.ms": "60000",
+  "schema.compatibility": "NONE",
+  "s3.compression.type": "gzip",
+
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+
+  "errors.tolerance": "all",
+  "errors.log.enable": "true",
+  "errors.log.include.messages": "true"
+}
