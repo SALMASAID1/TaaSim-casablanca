@@ -46,6 +46,20 @@ public class Job1GpsNormalizer {
     public static void main(String[] args) throws Exception {
         final ParameterTool params = ParameterTool.fromArgs(args);
 
+                final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+                buildJob(env, params);
+
+                env.execute("job1-gps-normalizer");
+        }
+
+        static void buildJob(StreamExecutionEnvironment env, ParameterTool params) throws Exception {
+                if (env == null) {
+                        throw new IllegalArgumentException("env must not be null");
+                }
+                if (params == null) {
+                        throw new IllegalArgumentException("params must not be null");
+                }
+
         final String kafkaBootstrap = params.get("kafka-bootstrap-servers", DEFAULT_KAFKA_BOOTSTRAP);
         final String sourceTopic = params.get("source-topic", DEFAULT_SOURCE_TOPIC);
         final String sinkTopic = params.get("sink-topic", DEFAULT_SINK_TOPIC);
@@ -55,7 +69,6 @@ public class Job1GpsNormalizer {
         final String checkpointDir = params.get("checkpoint-dir", DEFAULT_CHECKPOINT_DIR);
         final long checkpointIntervalMs = params.getLong("checkpoint-interval-ms", 60_000L);
 
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.getConfig().setGlobalJobParameters(params);
         env.getConfig().setAutoWatermarkInterval(1_000L);
 
@@ -165,7 +178,5 @@ public class Job1GpsNormalizer {
                 .name("to-processed-gps-json")
                 .sinkTo(processedGpsSink)
                 .name("kafka-processed.gps");
-
-        env.execute("job1-gps-normalizer");
     }
 }
