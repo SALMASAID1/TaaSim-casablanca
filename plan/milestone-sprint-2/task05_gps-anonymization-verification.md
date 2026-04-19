@@ -19,7 +19,7 @@ stored verbatim in Cassandra `vehicle_positions` — only zone centroid coordina
 - [ ] Test asserts that **all 20 rows** have coordinates matching one of the 16 known zone centroid
   coordinates (within 1 m tolerance)
 - [ ] Test passes cleanly when run with `pytest tests/test_anonymisation.py`
-- [ ] Result summary added to `docs/security-verification.md`
+- [ ] Result summary added to `docs/sprint-2/security-verification.md`
 
 ## Technical Hints
 - Zone centroid coordinates are in `zone_mapping.csv`. Load them as a dict

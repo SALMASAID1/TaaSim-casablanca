@@ -14,3 +14,8 @@ Evidence and setup notes are grouped under `docs/sprint-1/`:
 
 ## ADRs
 - [ADR-001 — Cassandra schema & partition keys](adr/adr-001-cassandra-schema.md)
+
+## Sprint 2 (Week 3) — Stream Processing I (GPS)
+Evidence will be grouped under `docs/sprint-2/`:
+
+- [Sprint 2 index](sprint-2/README.md)

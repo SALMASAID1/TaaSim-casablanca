@@ -22,7 +22,7 @@ enable Flink checkpointing every 60 seconds to MinIO, and produce documented evi
   is processed (appears in Cassandra) and not silently dropped
 - [ ] Late-event test: inject a GPS event with timestamp 4 minutes in the past → confirm the event
   is dropped (beyond allowed lateness) and a side-output counter increments
-- [ ] Test results documented in `docs/watermark-test-evidence.md` with log snippets or screenshots
+- [ ] Test results documented in `docs/sprint-2/watermark-test-evidence.md` with log snippets or screenshots
 - [ ] Checkpoint directory `s3a://taasim/flink-checkpoints/job1/` populated after 60 seconds of
   job run (verify with `mc ls`)
 
