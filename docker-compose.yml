@@ -445,7 +445,7 @@ services:
       JUPYTER_TOKEN: taasim
     volumes:
       - ./notebooks/notebook-spark:/home/jovyan/work
-      - ./docs/:/home/jovyan/data
+      - ./docs/sprint-1:/home/jovyan/data
       - ./conf/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
       - ./conf/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf:ro

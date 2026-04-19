@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 import pandas as pd
@@ -17,6 +18,48 @@ from kafka import KafkaProducer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def _repo_root() -> Path:
+    # File lives at: <repo>/src/producers/vehicle_gps_producer.py
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_data_path(path: str) -> str:
+    """Resolve a local relative path.
+
+    The docs/.env assume repo-relative paths (e.g., raw/porto-trips/train.csv).
+    When running from a subfolder (VS Code "Run Python File" often uses the
+    file's directory as CWD), those paths break.
+
+    Resolution order:
+    1) As provided (relative to current working directory)
+    2) Relative to repository root
+
+    S3 paths are returned unchanged.
+    """
+
+    if not path:
+        return path
+
+    if path.startswith(("s3a://", "s3://")):
+        return path
+
+    p = Path(path)
+    if p.is_absolute():
+        return str(p)
+
+    cwd_candidate = Path.cwd() / p
+    if cwd_candidate.exists():
+        return str(cwd_candidate.resolve())
+
+    repo_candidate = _repo_root() / p
+    if repo_candidate.exists():
+        resolved = str(repo_candidate.resolve())
+        logger.info("Resolved data path '%s' -> '%s' (repo-relative).", path, resolved)
+        return resolved
+
+    return path
 
 
 def _unix_to_iso8601(ts: int) -> str:
@@ -145,7 +188,7 @@ class VehicleGPSProducer:
 
         self.broker = broker
         self.topic = topic
-        self.data_path = data_path
+        self.data_path = _resolve_data_path(data_path)
         self.speed = speed
         self.noise_sigma_deg = noise_sigma_deg
         self.blackout_prob = blackout_prob
