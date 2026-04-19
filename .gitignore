@@ -11,3 +11,10 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Java / Maven build outputs
+target/
+*/target/
+
+# Editor settings
+.vscode/
