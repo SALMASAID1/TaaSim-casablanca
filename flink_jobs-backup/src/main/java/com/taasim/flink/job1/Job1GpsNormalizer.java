@@ -52,7 +52,7 @@ public class Job1GpsNormalizer {
                 env.execute("job1-gps-normalizer");
         }
 
-        static void buildJob(StreamExecutionEnvironment env, ParameterTool params) throws Exception {
+        static void buildJob(StreamExecutionEnvironment env, ParameterTool params) {
                 if (env == null) {
                         throw new IllegalArgumentException("env must not be null");
                 }

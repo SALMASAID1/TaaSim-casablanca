@@ -1,7 +1,7 @@
 NAME                   IMAGE                                          COMMAND                  SERVICE             CREATED          STATUS                    PORTS
 taasim-cassandra       cassandra:4.1                                  "docker-entrypoint.s…"   cassandra           43 hours ago     Up 2 hours (healthy)      7000-7001/tcp, 7199/tcp, 9160/tcp, 0.0.0.0:9042->9042/tcp, [::]:9042->9042/tcp
-taasim-flink-jm        flink:1.18.1-scala_2.12-java11                 "/docker-entrypoint.…"   flink-jobmanager    43 hours ago     Up 2 hours (healthy)      6123/tcp, 0.0.0.0:8081->8081/tcp, [::]:8081->8081/tcp
-taasim-flink-tm        flink:1.18.1-scala_2.12-java11                 "/docker-entrypoint.…"   flink-taskmanager   43 hours ago     Up 2 hours                6123/tcp, 8081/tcp
+taasim-flink-jm        flink:1.18.1-scala_2.12-java17                 "/docker-entrypoint.…"   flink-jobmanager    43 hours ago     Up 2 hours (healthy)      6123/tcp, 0.0.0.0:8081->8081/tcp, [::]:8081->8081/tcp
+taasim-flink-tm        flink:1.18.1-scala_2.12-java17                 "/docker-entrypoint.…"   flink-taskmanager   43 hours ago     Up 2 hours                6123/tcp, 8081/tcp
 taasim-grafana         grafana/grafana:10.4.2                         "/run.sh"                grafana             43 hours ago     Up 2 hours (healthy)      0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
 taasim-jupyter         quay.io/jupyter/pyspark-notebook:spark-3.5.0   "tini -g -- start.sh…"   jupyter             2 hours ago      Up 2 hours (healthy)      4040/tcp, 0.0.0.0:8888->8888/tcp, [::]:8888->8888/tcp
 taasim-kafka           confluentinc/cp-kafka:7.6.1                    "/etc/confluent/dock…"   kafka               43 hours ago     Up 2 hours (healthy)      0.0.0.0:9092->9092/tcp, [::]:9092->9092/tcp, 0.0.0.0:9101->9101/tcp, [::]:9101->9101/tcp
