@@ -269,7 +269,7 @@ services:
 # 4. APACHE FLINK — 1 JobManager + 1 TaskManager
 # ---------------------------------------------------------------------------
   flink-jobmanager:
-    image: flink:1.18.1-scala_2.12-java11
+    image: flink:1.18.1-scala_2.12-java17
     container_name: taasim-flink-jm
     hostname: flink-jobmanager
     networks:
@@ -308,7 +308,7 @@ services:
       start_period: 20s
 
   flink-taskmanager:
-    image: flink:1.18.1-scala_2.12-java11
+    image: flink:1.18.1-scala_2.12-java17
     container_name: taasim-flink-tm
     hostname: flink-taskmanager
     networks:
