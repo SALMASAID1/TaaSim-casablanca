@@ -7,6 +7,7 @@ Demonstrate **event-time processing** with a **3-minute allowed lateness waterma
 - Flink Job 1 deployed and running
 - Checkpointing interval: 60s
 - Checkpoint storage: MinIO (S3A)
+- Checkpoint directory: `s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/`
 
 ## Test Cases
 

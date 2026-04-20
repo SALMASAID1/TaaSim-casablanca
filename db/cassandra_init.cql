@@ -2,7 +2,6 @@
 --
 -- This file is intentionally idempotent:
 -- - safe to re-run (uses IF NOT EXISTS)
--- - matches the course brief required tables
 
 -- -------------------------------------------------------------------------
 -- Keyspace
@@ -21,6 +20,7 @@ CREATE KEYSPACE IF NOT EXISTS taasim
 --
 -- Clustering key rationale:
 -- - event_time DESC makes "latest positions" a fast slice read.
+-- - taxi_id prevents overwrites when multiple vehicles share the same second-level event_time.
 -- - TTL keeps the table small and automatically removes stale positions.
 -- -------------------------------------------------------------------------
 
@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS taasim.vehicle_positions (
   lon         double,
   speed       float,
   status      text,
-  PRIMARY KEY ((city, zone_id), event_time)
-) WITH CLUSTERING ORDER BY (event_time DESC)
+  PRIMARY KEY ((city, zone_id), event_time, taxi_id)
+) WITH CLUSTERING ORDER BY (event_time DESC, taxi_id ASC)
   AND default_time_to_live = 3600;
 
 -- -------------------------------------------------------------------------

@@ -9,6 +9,7 @@ This folder will contain **Sprint 2 evidence** required by the official brief (W
 
 ## Evidence Index
 
+- Job-1 contracts (inputs/outputs/config): `job1-contract.md`
 - Watermark + checkpointing test notes: `watermark-test-evidence.md`
 - GPS anonymization verification notes: `security-verification.md`
 

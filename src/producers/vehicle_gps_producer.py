@@ -484,7 +484,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--topic", default=os.environ.get("TAASIM_KAFKA_TOPIC", "raw.gps"))
     p.add_argument(
         "--data-path",
-        default=os.environ.get("TAASIM_DATA_PATH", "raw/porto-trips/train.csv"),
+        # default=os.environ.get("TAASIM_DATA_PATH", "raw/porto-trips/train.csv"),
+        default=os.environ.get("TAASIM_DATA_PATH", "s3://taasim/raw/porto-trips/train.csv"),
         help="Either Porto train.csv (local or s3a://...) or curated parquet directory (s3a://...).",
     )
     p.add_argument("--speed", type=float, default=float(os.environ.get("TAASIM_SPEED", "10.0")))
@@ -523,7 +524,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     args = _build_arg_parser().parse_args()
-
+    logger.warning("the building args are : %s" , args)
     producer_service = VehicleGPSProducer(
         broker=args.broker,
         topic=args.topic,

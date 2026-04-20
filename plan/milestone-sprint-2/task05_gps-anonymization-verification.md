@@ -22,8 +22,9 @@ stored verbatim in Cassandra `vehicle_positions` — only zone centroid coordina
 - [ ] Result summary added to `docs/sprint-2/security-verification.md`
 
 ## Technical Hints
-- Zone centroid coordinates are in `zone_mapping.csv`. Load them as a dict
-  `{zone_id: (centroid_lat, centroid_lon)}` in the test.
+- Zone centroid coordinates are derived from `zone_mapping.csv` bounding boxes as midpoints.
+  Build a dict `{zone_id: (centroid_lat, centroid_lon)}` using `(lat_min + lat_max)/2` and
+  `(lon_min + lon_max)/2`.
 - To check coordinate equality with tolerance, use:
   ```python
   import math

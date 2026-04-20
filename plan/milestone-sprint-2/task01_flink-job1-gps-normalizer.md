@@ -43,7 +43,8 @@ validates and zone-maps each GPS event, anonymises coordinates, and writes to Ca
   and broadcast it; in the `BroadcastProcessFunction`, use the bounding-box table to look up
   `arrondissement_id` for each event.
 - Anonymisation: after zone lookup, replace `lat = zone_centroid_lat`, `lon = zone_centroid_lon`.
-  Zone centroid coordinates are in `zone_mapping.csv`.
+  Zone centroid coordinates are derived from `zone_mapping.csv` as the midpoint of the bbox:
+  `centroid_lat = (lat_min + lat_max)/2`, `centroid_lon = (lon_min + lon_max)/2`.
 - Cassandra sink: use `CassandraSink.addSink(stream)` with the `taasim.vehicle_positions` table.
   Set `enableWriteAheadLog()` for at-least-once semantics.
 - Reference: project brief §3.3 Flink Processing Jobs (Job 1), §9.3 Flink Jobs.

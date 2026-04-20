@@ -15,12 +15,13 @@ In Cassandra, the **primary key is the query plan**: partition keys must match t
 ## Decision
 We create keyspace `taasim` and three tables:
 
-1) `vehicle_positions` with primary key `((city, zone_id), event_time)` and clustering order `event_time DESC`.
+1) `vehicle_positions` with primary key `((city, zone_id), event_time, taxi_id)` and clustering order `event_time DESC, taxi_id ASC`.
 
 - Why `(city, zone_id)` and not `taxi_id`?
   - The expected query is “show me vehicles in zone X now” (dashboard + API).
   - Partitioning by `taxi_id` would make this query a scatter-gather across many partitions.
   - Clustering by `event_time DESC` makes “latest positions” a fast slice read.
+  - Adding `taxi_id` to the clustering key prevents overwrites when timestamps are second-level.
   - TTL (1 hour) prevents the table from accumulating stale positions.
 
 2) `trips` with primary key `((city, date_bucket), created_at)` and clustering order `created_at DESC`.

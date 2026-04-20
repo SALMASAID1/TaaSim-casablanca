@@ -16,14 +16,14 @@ enable Flink checkpointing every 60 seconds to MinIO, and produce documented evi
 ## Acceptance Criteria
 - [ ] `BoundedOutOfOrdernessWatermarks` assigned with `maxOutOfOrderness = Duration.ofMinutes(3)`
 - [ ] Checkpointing enabled: interval = 60 seconds, mode = `AT_LEAST_ONCE`,
-  checkpoint storage = `s3a://taasim/flink-checkpoints/job1/`
+  checkpoint storage = `s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/`
 - [ ] RocksDB state backend configured for Job 1
 - [ ] Late-event test: inject a GPS event with timestamp 2 minutes in the past → confirm the event
   is processed (appears in Cassandra) and not silently dropped
 - [ ] Late-event test: inject a GPS event with timestamp 4 minutes in the past → confirm the event
   is dropped (beyond allowed lateness) and a side-output counter increments
 - [ ] Test results documented in `docs/sprint-2/watermark-test-evidence.md` with log snippets or screenshots
-- [ ] Checkpoint directory `s3a://taasim/flink-checkpoints/job1/` populated after 60 seconds of
+- [ ] Checkpoint directory `s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/` populated after 60 seconds of
   job run (verify with `mc ls`)
 
 ## Technical Hints
@@ -44,7 +44,7 @@ enable Flink checkpointing every 60 seconds to MinIO, and produce documented evi
   env.get_checkpoint_config().set_checkpointing_mode(CheckpointingMode.AT_LEAST_ONCE)
   env.get_checkpoint_config().set_min_pause_between_checkpoints(30_000)
   env.set_state_backend(EmbeddedRocksDBStateBackend())
-  env.get_checkpoint_config().set_checkpoint_storage("s3a://taasim/flink-checkpoints/job1/")
+  env.get_checkpoint_config().set_checkpoint_storage("s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/")
   ```
 - To inject a late event for testing, produce a Kafka message to `raw.gps` with a `timestamp`
   field set to `now - 2 minutes` (ISO-8601). Use `kafka-console-producer` or a small Python script.
