@@ -9,9 +9,10 @@ centroid, and writes clean positions to Cassandra. It also forwards normalised e
 missing zone mapping) cascades into every downstream component.
 
 ## Objective
-Implement `flink_jobs/job1_gps_normalizer.py` (or Java equivalent) that consumes `raw.gps`,
-validates and zone-maps each GPS event, anonymises coordinates, and writes to Cassandra
-`vehicle_positions` and Kafka `processed.gps`.
+Implement Flink Job 1 under `flink_jobs/` (Java/Maven). The entrypoint is
+`com.taasim.flink.job1.Job1GpsNormalizer`, consuming `raw.gps`, validating and zone-mapping each
+GPS event, anonymising coordinates, and writing to Cassandra `vehicle_positions` and Kafka
+`processed.gps`.
 
 ## Acceptance Criteria
 - [ ] Flink job reads from Kafka topic `raw.gps` using a named consumer group `flink-job1-gps`
@@ -28,6 +29,8 @@ validates and zone-maps each GPS event, anonymises coordinates, and writes to Ca
 - [ ] Watermarks assigned (see task02 for detailed watermark config)
 
 ## Technical Hints
+- This repo’s implementation is **Java/Maven** under `flink_jobs/`.
+  Entrypoint: `com.taasim.flink.job1.Job1GpsNormalizer`.
 - Use PyFlink's `StreamExecutionEnvironment` with `KafkaSource` (Flink 1.17+):
   ```python
   from pyflink.datastream.connectors.kafka import KafkaSource, KafkaOffsetsInitializer

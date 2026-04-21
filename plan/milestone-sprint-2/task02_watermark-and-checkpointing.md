@@ -27,6 +27,9 @@ enable Flink checkpointing every 60 seconds to MinIO, and produce documented evi
   job run (verify with `mc ls`)
 
 ## Technical Hints
+- Java implementation reference (this repo): `flink_jobs/src/main/java/com/taasim/flink/job1/Job1GpsNormalizer.java`
+  - Watermarks: `WatermarkStrategy.forBoundedOutOfOrderness(Duration.ofMinutes(3))`
+  - Checkpointing: `env.enableCheckpointing(60_000)` and `setCheckpointStorage("s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/")`
 - Watermark assignment in PyFlink:
   ```python
   from pyflink.common.watermark_strategy import WatermarkStrategy
