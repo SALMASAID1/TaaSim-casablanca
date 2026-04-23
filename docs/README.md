@@ -12,6 +12,9 @@ Evidence and setup notes are grouped under `docs/sprint-1/`:
 - [Porto → Casablanca coordinate validation plot](sprint-1/casablanca-coordinate-validation.png)
 - [Interactive Casablanca map validation (Folium)](sprint-1/casablanca-interactive-locked.html)
 
+## Pipeline Documentation
+- [Spark Synthetic Trip Generation Pipeline](spark_pipeline_documentation.md) — Detailed overview of the Casablanca simulation logic.
+
 ## ADRs
 - [ADR-001 — Cassandra schema & partition keys](adr/adr-001-cassandra-schema.md)
 
