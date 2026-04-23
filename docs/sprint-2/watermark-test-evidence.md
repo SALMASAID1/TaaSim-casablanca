@@ -21,6 +21,111 @@ Demonstrate **event-time processing** with a **3-minute allowed lateness waterma
 
 ## Evidence
 
+### Run (2026-04-21) — Try Again
+
+#### Job
+- Job name: `job1-gps-normalizer`
+- Job ID (RUNNING): `36f54e632ce9db664d2ea9e266492573`
+
+#### Test IDs
+- run_id: `20260421T181658Z`
+- taxi_id (key): `wm_tryagain_20260421T181658Z`
+
+#### Notes (partitioned topic)
+`raw.gps` has **4 partitions**. Watermarks are computed per-partition and the effective watermark is the **minimum** across partitions.
+
+To make the lateness test deterministic, we first advanced event-time on **all partitions** using one “base timestamp” record per partition. For non-test partitions we used `speed=200` so the record is filtered by validation (not persisted to Cassandra) while still advancing watermark (timestamp assignment happens before validation).
+
+#### Commands (repro)
+
+```bash
+# Upload JAR (fresh Flink restart)
+curl -sf -X POST -H 'Expect:' -F 'jarfile=@flink_jobs/target/taasim-flink-jobs-1.0.0-shaded.jar' \
+	http://localhost:8081/jars/upload
+
+# Run Job-1 (this run)
+curl -sS -X POST -H 'Content-Type: application/json' \
+	-d '{"entryClass":"com.taasim.flink.job1.Job1GpsNormalizer"}' \
+	http://localhost:8081/jars/79dc5214-ea24-40ae-8ed9-d75517144468_taasim-flink-jobs-1.0.0-shaded.jar/run
+
+# Kafka partition count
+docker exec -i taasim-kafka kafka-topics --bootstrap-server localhost:9092 --describe --topic raw.gps
+
+# Timestamps used (derived from current watermark at test start)
+# TS_BASE=2026-04-21T17:41:59Z
+# TS_L2  =2026-04-21T17:39:59Z
+# TS_L4  =2026-04-21T17:37:59Z
+
+# BASE record for the test key (partition 1)
+python3 -c 'import json; key="wm_tryagain_20260421T181658Z"; ts="2026-04-21T17:41:59Z"; evt={"taxi_id":key,"trip_id":"base","timestamp":ts,"lat":33.605,"lon":-7.61,"speed":30.0,"status":"available"}; print(key+"|"+json.dumps(evt,separators=(",",":")))' \
+	| docker exec -i taasim-kafka kafka-console-producer --bootstrap-server localhost:9092 --topic raw.gps --property parse.key=true --property key.separator='|'
+
+# Advance other partitions (keys chosen to map to partitions 0/2/3) — invalid speed so they do not persist
+python3 -c 'import json; ts="2026-04-21T17:41:59Z"; 
+keys=["wm_adv_2","wm_adv_3","wm_adv_0"]; 
+for k in keys:
+  evt={"taxi_id":k,"trip_id":"adv","timestamp":ts,"lat":33.605,"lon":-7.61,"speed":200.0,"status":"available"};
+  print(k+"|"+json.dumps(evt,separators=(",",":")))' \
+	| docker exec -i taasim-kafka kafka-console-producer --bootstrap-server localhost:9092 --topic raw.gps --property parse.key=true --property key.separator='|'
+
+# Case A: late by 2 minutes (should be processed)
+python3 -c 'import json; key="wm_tryagain_20260421T181658Z"; ts="2026-04-21T17:39:59Z"; evt={"taxi_id":key,"trip_id":"late2m","timestamp":ts,"lat":33.605,"lon":-7.61,"speed":30.0,"status":"available"}; print(key+"|"+json.dumps(evt,separators=(",",":")))' \
+	| docker exec -i taasim-kafka kafka-console-producer --bootstrap-server localhost:9092 --topic raw.gps --property parse.key=true --property key.separator='|'
+
+# Case B: late by 4 minutes (should be dropped)
+python3 -c 'import json; key="wm_tryagain_20260421T181658Z"; ts="2026-04-21T17:37:59Z"; evt={"taxi_id":key,"trip_id":"late4m","timestamp":ts,"lat":33.605,"lon":-7.61,"speed":30.0,"status":"available"}; print(key+"|"+json.dumps(evt,separators=(",",":")))' \
+	| docker exec -i taasim-kafka kafka-console-producer --bootstrap-server localhost:9092 --topic raw.gps --property parse.key=true --property key.separator='|'
+
+# Metric evidence
+curl -sS \
+	"http://localhost:8081/jobs/36f54e632ce9db664d2ea9e266492573/vertices/cbc357ccb763df2852fee8c4fc7d55f2/metrics?get=0.validate-and-late-filter.dropped_late"
+```
+
+#### Cassandra (Case A persisted, Case B absent)
+
+```sql
+SELECT event_time, taxi_id, speed, status
+FROM taasim.vehicle_positions
+WHERE city='casablanca' AND zone_id=1 AND taxi_id='wm_tryagain_20260421T181658Z'
+ALLOW FILTERING;
+```
+
+```text
+ event_time                      | taxi_id                      | speed | status
+---------------------------------+------------------------------+-------+-----------
+ 2026-04-21 17:41:59.000000+0000 | wm_tryagain_20260421T181658Z |    30 | available
+ 2026-04-21 17:39:59.000000+0000 | wm_tryagain_20260421T181658Z |    30 | available
+
+(2 rows)
+```
+
+The 4-minute-late record at `2026-04-21T17:37:59Z` is absent in Cassandra.
+
+#### Flink metric (Case B dropped_late incremented)
+
+```json
+[{"id":"0.validate-and-late-filter.dropped_late","value":"1"}]
+```
+
+#### Checkpointing (Flink REST + MinIO)
+
+Flink REST checkpoint summary:
+
+```text
+counts= {'restored': 0, 'total': 34, 'in_progress': 0, 'completed': 34, 'failed': 0}
+latest_completed_external_path= s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/36f54e632ce9db664d2ea9e266492573/chk-34
+latest_completed_status= COMPLETED
+```
+
+MinIO listing (filesystem view inside container):
+
+```text
+/data/taasim/raw/kafka-archive/flink-checkpoints/job1/36f54e632ce9db664d2ea9e266492573:
+chk-34
+shared__XLDIR__
+taskowned__XLDIR__
+```
+
 ### Run (2026-04-20)
 
 #### Job

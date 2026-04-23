@@ -446,6 +446,7 @@ services:
     volumes:
       - ./notebooks/notebook-spark:/home/jovyan/work
       - ./docs/sprint-1:/home/jovyan/data
+      - ./metadata:/home/jovyan/metadata
       - ./conf/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
       - ./conf/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf:ro
