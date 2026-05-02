@@ -1,20 +1,88 @@
-# Local Python environment
-venv/
+# -----------------------------------------------------------------------------
+# Secrets / local environment
+# -----------------------------------------------------------------------------
 .env
+.env.*
+!.env.example
 
-# Large local datasets (kept in MinIO for the project)
-raw/
+# -----------------------------------------------------------------------------
+# OS / editor junk
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
 
-# Python caches
-__pycache__/
-*.pyc
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Java / Maven build outputs
-target/
-*/target/
-
-# Editor settings
 .vscode/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+venv/
+.venv/
+
+__pycache__/
+*.py[cod]
+*.pyd
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.coverage
+coverage.xml
+
+dist/
+build/
+*.egg-info/
+
+# -----------------------------------------------------------------------------
+# Jupyter / IPython
+# -----------------------------------------------------------------------------
+.ipynb_checkpoints/
+.ipython/
+.jupyter/
+
+# Notebook execution cache (created by the notebooks in this repo)
+notebooks/**/cache/
+
+# -----------------------------------------------------------------------------
+# Java / Maven (Flink jobs)
+# -----------------------------------------------------------------------------
+**/target/
+hs_err_pid*
+
+# -----------------------------------------------------------------------------
+# Spark local runtime artifacts
+# -----------------------------------------------------------------------------
+metastore_db/
+spark-warehouse/
+derby.log
+spark-events/
+
+# -----------------------------------------------------------------------------
+# Data zones & generated artifacts (stored in MinIO; keep out of git)
+# -----------------------------------------------------------------------------
+raw/**
+!raw/**/
+
+curated/**
+!curated/**/
+
+osrm_data/**
+
+# Allow tracking tiny helper/docs inside ignored zones (if needed)
+!raw/**/README*
+!curated/**/README*
+!raw/**/*.md
+!raw/**/*.txt
+!raw/**/*.r
+!raw/**/*.py
+!raw/**/*.sh
+
