@@ -12,8 +12,14 @@ volumes:
   s3a_jars:
 
 # ---------------------------------------------------------------------------
-# Common S3A / MinIO environment — injected into Flink
-# NOTE: Spark uses spark-defaults.conf mount instead (apache/spark requirement)
+# Common S3A / MinIO environment
+#
+# Used by:
+# - Flink: for its built-in S3 filesystem plugin configuration
+# - Spark/Jupyter: because Spark is configured to read S3 credentials from env
+#   (see spark.hadoop.fs.s3a.aws.credentials.provider in conf/spark-defaults.conf)
+#
+# Spark settings themselves live in conf/spark-defaults.conf (mounted below).
 # ---------------------------------------------------------------------------
 x-s3a-env: &s3a-env
   AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
@@ -334,13 +340,18 @@ services:
       - s3a_jars:/opt/flink/plugins
 
 # ---------------------------------------------------------------------------
-# 5. APACHE SPARK — Master + 1 Worker  (apache/spark:3.5.0 — official image)
+# 5. APACHE SPARK (Standalone) — Master + 1 Worker
 #
-#  Key differences vs bitnami:
-#  - Entrypoint is /opt/entrypoint.sh; role is passed as argument (master/worker)
-#  - NO SPARK_MODE / SPARK_CONF_* env vars — those are Bitnami-only
-#  - S3A config lives in conf/spark-defaults.conf, mounted read-only
-#  - Worker UI on 8082 (avoids clash with Flink on 8081)
+# NOTE: This stack uses the Jupyter PySpark image as the Spark distribution
+# for the standalone master/worker (quay.io/jupyter/pyspark-notebook:spark-3.5.0).
+# That keeps Spark + Python aligned with the notebook runtime.
+#
+# Important details for this image:
+# - We start Spark via /usr/local/spark/bin/spark-class (not apache/spark entrypoint)
+# - Spark config is provided via conf/spark-defaults.conf mounted into
+#   /usr/local/spark/conf/spark-defaults.conf
+# - Extra S3A jars are mounted at /opt/extra-jars and referenced via spark.jars
+# - Worker UI uses 8082 (avoids clash with Flink on 8081)
 # ---------------------------------------------------------------------------
   spark-master:
     image: quay.io/jupyter/pyspark-notebook:spark-3.5.0
@@ -449,7 +460,6 @@ services:
       - ./metadata:/home/jovyan/metadata
       - ./conf/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
-      - ./conf/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf:ro
     depends_on:
       spark-master:
         condition: service_healthy

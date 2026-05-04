@@ -318,75 +318,13 @@ class VehicleGPSProducer:
     def _stream_from_porto_csv(self) -> None:
         logger.info("Loading Porto CSV trips from %s...", self.data_path)
         trips = self._load_porto_trips(self.data_path)
-        logger.info("Loaded %d trips; building event heap...", len(trips))
-
-        min_event_ts = min(t.base_ts for t in trips)
-
-        while True:
-            sim_start = int(time.time())
-            heap: List[Tuple[int, int, int]] = []  # (event_ts, trip_idx, point_idx)
-            for trip_idx, trip in enumerate(trips):
-                heapq.heappush(heap, (trip.base_ts, trip_idx, 0))
-
-            last_event_ts: Optional[int] = None
-            produced = 0
-
-            while heap:
-                event_ts, trip_idx, point_idx = heapq.heappop(heap)
-
-                if last_event_ts is not None:
-                    wait_s = (event_ts - last_event_ts) / self.speed
-                    if wait_s > 0:
-                        time.sleep(wait_s)
-
-                trip = trips[trip_idx]
-                porto_lon, porto_lat = trip.polyline[point_idx]
-                cas_lon, cas_lat = _porto_to_casablanca(porto_lon, porto_lat)
-
-                # Speed within trip (15s per ping).
-                speed_kmh = 0.0
-                if point_idx > 0:
-                    prev_lon, prev_lat = trip.polyline[point_idx - 1]
-                    prev_cas_lon, prev_cas_lat = _porto_to_casablanca(prev_lon, prev_lat)
-                    dist_km = _haversine_km(prev_cas_lon, prev_cas_lat, cas_lon, cas_lat)
-                    speed_kmh = float((dist_km / 15.0) * 3600.0) if dist_km > 0 else 0.0
-
-                noisy_lat, noisy_lon = self._apply_gaussian_noise(cas_lat, cas_lon)
-
-                rebased_ts = sim_start + (event_ts - min_event_ts)
-                payload = {
-                    "taxi_id": trip.taxi_id,
-                    "timestamp": _unix_to_iso8601(rebased_ts),
-                    "lat": noisy_lat,
-                    "lon": noisy_lon,
-                    "speed": round(speed_kmh, 2),
-                    "status": "available",
-                    "trip_id": trip.trip_id,
-                }
-
-                self._maybe_send_with_blackout(taxi_id=trip.taxi_id, payload=payload)
-                produced += 1
-                if produced % 10_000 == 0:
-                    logger.info("Produced %d GPS events...", produced)
-
-                last_event_ts = event_ts
-
-                next_idx = point_idx + 1
-                if next_idx < len(trip.polyline):
-                    heapq.heappush(heap, (trip.base_ts + (next_idx * 15), trip_idx, next_idx))
-
-            if not self.loop:
-                logger.info("Completed one pass of %d events; exiting.", produced)
-                return
-
-            logger.info("Completed one pass (%d events). Looping...", produced)
+        self._replay_trips(trips, is_map_matched=False)
 
     def _stream_from_parquet(self) -> None:
         logger.info("Loading parquet from %s...", self.data_path)
         path = self.data_path
         storage_options: Optional[Dict[str, object]] = None
 
-        # Pandas/pyarrow uses fsspec/s3fs, which expects s3:// (not s3a://)
         if path.startswith("s3a://"):
             path = "s3://" + path[len("s3a://") :]
         if path.startswith("s3://"):
@@ -394,65 +332,118 @@ class VehicleGPSProducer:
 
         df = pd.read_parquet(
             path,
-            columns=["TIMESTAMP", "TRIP_ID", "TAXI_ID", "cas_lat", "cas_lon"],
+            columns=["trip_id", "taxi_id", "timestamp", "polyline"],
             storage_options=storage_options,
-        ).sort_values(by="TIMESTAMP")
+        ).sort_values(by="timestamp")
 
         if df.empty:
             raise ValueError(f"Parquet dataset is empty: {self.data_path}")
 
-        base_ts = int(df["TIMESTAMP"].min())
+        trips: List[_Trip] = []
+        for row in df.itertuples(index=False):
+            if len(trips) >= self.max_trips:
+                break
+            
+            try:
+                coords = json.loads(getattr(row, "polyline"))
+                if not coords:
+                    continue
+                
+                polyline: List[Tuple[float, float]] = []
+                for p in coords:
+                    if isinstance(p, list) and len(p) == 2:
+                        polyline.append((float(p[0]), float(p[1])))
+                
+                if not polyline:
+                    continue
 
-        logger.info("Broadcasting at %sx speed (parquet replay)...", self.speed)
+                trips.append(
+                    _Trip(
+                        trip_id=str(getattr(row, "trip_id", "")),
+                        taxi_id=str(getattr(row, "taxi_id", "")),
+                        base_ts=int(getattr(row, "timestamp")),
+                        polyline=polyline,
+                    )
+                )
+            except Exception:
+                continue
 
-        last_stream_ts: Optional[int] = None
-        sim_start = int(time.time())
-        last_by_taxi: Dict[str, Tuple[int, float, float]] = {}
-        produced = 0
+        if not trips:
+            raise ValueError(f"No valid trips found in {path}")
+
+        self._replay_trips(trips, is_map_matched=True)
+
+    def _replay_trips(self, trips: List[_Trip], is_map_matched: bool) -> None:
+        logger.info("Loaded %d trips; building event heap for %sx speed replay...", len(trips), self.speed)
+
+        min_event_ts = min(t.base_ts for t in trips)
 
         try:
-            for row in df.itertuples(index=False):
-                curr_ts_raw = int(getattr(row, "TIMESTAMP"))
-                taxi_id = str(getattr(row, "TAXI_ID"))
-                trip_id = str(getattr(row, "TRIP_ID"))
-                cas_lat = float(getattr(row, "cas_lat"))
-                cas_lon = float(getattr(row, "cas_lon"))
+            while True:
+                sim_start = int(time.time())
+                heap: List[Tuple[int, int, int]] = []  # (event_ts, trip_idx, point_idx)
+                for trip_idx, trip in enumerate(trips):
+                    heapq.heappush(heap, (trip.base_ts, trip_idx, 0))
 
-                # Sleep by event-time gap (accelerated).
-                if last_stream_ts is not None:
-                    wait_s = (curr_ts_raw - last_stream_ts) / self.speed
-                    if wait_s > 0:
-                        time.sleep(wait_s)
+                last_event_ts: Optional[int] = None
+                produced = 0
 
-                # Speed based on last point seen for this taxi.
-                speed_kmh = 0.0
-                if taxi_id in last_by_taxi:
-                    prev_ts, prev_lat, prev_lon = last_by_taxi[taxi_id]
-                    dt = curr_ts_raw - prev_ts
-                    if dt > 0:
-                        dist_km = _haversine_km(prev_lon, prev_lat, cas_lon, cas_lat)
-                        speed_kmh = float((dist_km / dt) * 3600.0)
+                while heap:
+                    event_ts, trip_idx, point_idx = heapq.heappop(heap)
 
-                last_by_taxi[taxi_id] = (curr_ts_raw, cas_lat, cas_lon)
-                noisy_lat, noisy_lon = self._apply_gaussian_noise(cas_lat, cas_lon)
+                    if last_event_ts is not None:
+                        wait_s = (event_ts - last_event_ts) / self.speed
+                        if wait_s > 0:
+                            time.sleep(wait_s)
 
-                rebased_ts = sim_start + (curr_ts_raw - base_ts)
-                payload = {
-                    "taxi_id": taxi_id,
-                    "timestamp": _unix_to_iso8601(rebased_ts),
-                    "lat": noisy_lat,
-                    "lon": noisy_lon,
-                    "speed": round(speed_kmh, 2),
-                    "status": "available",
-                    "trip_id": trip_id,
-                }
+                    trip = trips[trip_idx]
+                    lon, lat = trip.polyline[point_idx]
+                    
+                    if is_map_matched:
+                        cas_lon, cas_lat = lon, lat
+                    else:
+                        cas_lon, cas_lat = _porto_to_casablanca(lon, lat)
 
-                self._maybe_send_with_blackout(taxi_id=taxi_id, payload=payload)
-                produced += 1
-                if produced % 10_000 == 0:
-                    logger.info("Produced %d GPS events...", produced)
+                    # Speed within trip (15s per ping).
+                    speed_kmh = 0.0
+                    if point_idx > 0:
+                        prev_lon, prev_lat = trip.polyline[point_idx - 1]
+                        if is_map_matched:
+                            prev_cas_lon, prev_cas_lat = prev_lon, prev_lat
+                        else:
+                            prev_cas_lon, prev_cas_lat = _porto_to_casablanca(prev_lon, prev_lat)
+                        dist_km = _haversine_km(prev_cas_lon, prev_cas_lat, cas_lon, cas_lat)
+                        speed_kmh = float((dist_km / 15.0) * 3600.0) if dist_km > 0 else 0.0
 
-                last_stream_ts = curr_ts_raw
+                    noisy_lat, noisy_lon = self._apply_gaussian_noise(cas_lat, cas_lon)
+
+                    rebased_ts = sim_start + (event_ts - min_event_ts)
+                    payload = {
+                        "taxi_id": trip.taxi_id,
+                        "timestamp": _unix_to_iso8601(rebased_ts),
+                        "lat": noisy_lat,
+                        "lon": noisy_lon,
+                        "speed": round(speed_kmh, 2),
+                        "status": "available",
+                        "trip_id": trip.trip_id,
+                    }
+
+                    self._maybe_send_with_blackout(taxi_id=trip.taxi_id, payload=payload)
+                    produced += 1
+                    if produced % 10_000 == 0:
+                        logger.info("Produced %d GPS events...", produced)
+
+                    last_event_ts = event_ts
+
+                    next_idx = point_idx + 1
+                    if next_idx < len(trip.polyline):
+                        heapq.heappush(heap, (trip.base_ts + (next_idx * 15), trip_idx, next_idx))
+
+                if not self.loop:
+                    logger.info("Completed one pass of %d events; exiting.", produced)
+                    return
+
+                logger.info("Completed one pass (%d events). Looping...", produced)
 
         except KeyboardInterrupt:
             logger.info("Simulation stopped by user.")
