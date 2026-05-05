@@ -56,8 +56,8 @@ Founder A
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers
-_Free-form notes added during execution._
+Implemented in `spark_jobs/etl_porto.py`. Uses coordinate shifting (Porto→Casablanca) for zone mapping, broadcast join with zone_mapping.csv (16 rows), POLYLINE parsing via `from_json`+`explode`, deduplication on TRIP_ID, and Parquet output partitioned by year_month.

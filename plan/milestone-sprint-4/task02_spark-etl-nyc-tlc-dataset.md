@@ -52,8 +52,8 @@ Founder A
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers
-_Free-form notes added during execution._
+Implemented in `spark_jobs/etl_nyc_tlc.py`. Reads 3 months of Yellow Taxi Parquet (~30M rows), computes per-zone-per-hour demand aggregates using broadcast join with zone_mapping.csv. Uses PULocationID % 16 + 1 for zone mapping. Optimised with spark.sql.shuffle.partitions=16.

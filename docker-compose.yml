@@ -404,6 +404,7 @@ services:
       <<: *s3a-env
       SPARK_WORKER_DIR: /tmp/spark-work
       SPARK_WORKER_CORES: "2"
+      
       SPARK_WORKER_MEMORY: "2g"
       SPARK_WORKER_WEBUI_PORT: "8082"
       PYSPARK_PYTHON: python3
@@ -458,6 +459,7 @@ services:
       - ./notebooks/notebook-spark:/home/jovyan/work
       - ./docs/sprint-1:/home/jovyan/data
       - ./metadata:/home/jovyan/metadata
+      - ./spark_jobs:/home/jovyan/spark_jobs
       - ./conf/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
       - s3a_jars:/opt/extra-jars:ro
     depends_on:

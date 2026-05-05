@@ -1,0 +1,345 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.4.2"
+    },
+    {
+      "type": "datasource",
+      "id": "hadesarchitect-cassandra-datasource",
+      "name": "Cassandra",
+      "version": "3.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "barchart",
+      "name": "Bar chart",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "🚕 TaaSim Live — Vehicle Heatmap",
+      "description": "Real-time vehicle positions across Casablanca zones (from Flink → Cassandra → Grafana)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "hadesarchitect-cassandra-datasource", "uid": "TaaSim-Cassandra" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "target": "SELECT window_start, active_vehicles, pending_requests, ratio FROM taasim.demand_zones WHERE city='casablanca' AND zone_id=1 ORDER BY window_start DESC LIMIT 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 30,
+            "gradientMode": "scheme",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "📊 Supply / Demand Ratio by Zone",
+      "description": "Live supply-demand ratio from Flink sliding windows (from demand_zones table)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "hadesarchitect-cassandra-datasource", "uid": "TaaSim-Cassandra" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "target": "SELECT window_start, ratio, forecast_demand FROM taasim.demand_zones WHERE city='casablanca' AND zone_id=2 ORDER BY window_start DESC LIMIT 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "percentunit",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "red", "value": 1.0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "📋 KPI Summary — Last 24 Hours",
+      "description": "Panel 3: Operational KPIs — total trips, avg ETA, SLA compliance, top demand zones. Data from taasim.trips and taasim.demand_zones tables, refreshed every 60 seconds.",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "hadesarchitect-cassandra-datasource", "uid": "TaaSim-Cassandra" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "target": "SELECT zone_id, zone_name, metric_value, detail FROM taasim.kpi_weekly WHERE city='casablanca' AND kpi_name='trips_per_zone' LIMIT 16"
+        },
+        {
+          "refId": "B",
+          "rawQuery": true,
+          "target": "SELECT zone_id, zone_name, metric_value FROM taasim.kpi_weekly WHERE city='casablanca' AND kpi_name='avg_trip_duration' LIMIT 16"
+        },
+        {
+          "refId": "C",
+          "rawQuery": true,
+          "target": "SELECT zone_id, zone_name, metric_value AS gap_score, detail FROM taasim.kpi_weekly WHERE city='casablanca' AND kpi_name='coverage_gap' LIMIT 16"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 200 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "zone_name" },
+            "properties": [
+              { "id": "custom.width", "value": 160 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "metric_value" },
+            "properties": [
+              { "id": "displayName", "value": "Trip Count" },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "gap_score" },
+            "properties": [
+              { "id": "displayName", "value": "Coverage Gap" },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 100 },
+                  { "color": "red", "value": 500 }
+                ]
+              }}
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          { "desc": true, "displayName": "Trip Count" }
+        ],
+        "footer": {
+          "show": true,
+          "reducer": ["sum"],
+          "countRows": false
+        },
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        }
+      ],
+      "interval": "60s"
+    },
+    {
+      "id": 4,
+      "title": "📊 Peak Hours — Trip Count by Hour of Day",
+      "description": "Panel 4: Bar chart showing trip count by hour (0-23) for the current week. Sourced from Spark KPI output in Cassandra kpi_peak_hours table. Useful for fleet scheduling and shift planning.",
+      "type": "barchart",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "hadesarchitect-cassandra-datasource", "uid": "TaaSim-Cassandra" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "target": "SELECT hour_of_day, trip_count FROM taasim.kpi_peak_hours WHERE city='casablanca' AND week_start='2013-07-01' LIMIT 24"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Hour of Day",
+            "axisPlacement": "auto",
+            "fillOpacity": 85,
+            "gradientMode": "hue",
+            "lineWidth": 1,
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 500 },
+              { "color": "red", "value": 1000 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "hour_of_day" },
+            "properties": [
+              { "id": "displayName", "value": "Hour" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "trip_count" },
+            "properties": [
+              { "id": "displayName", "value": "Trips" },
+              { "id": "color", "value": { "mode": "continuous-GrYlRd" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "barRadius": 0.15,
+        "barWidth": 0.7,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": { "calcs": ["sum", "mean"], "displayMode": "list", "placement": "bottom" },
+        "orientation": "vertical",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": { "mode": "single", "sort": "none" },
+        "xField": "hour_of_day",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "interval": "60s"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["taasim", "casablanca", "kpi", "sprint-4"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "casablanca", "value": "casablanca" },
+        "hide": 0,
+        "label": "City",
+        "name": "city",
+        "options": [
+          { "selected": true, "text": "casablanca", "value": "casablanca" }
+        ],
+        "query": "casablanca",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "Africa/Casablanca",
+  "title": "TaaSim Live — Casablanca Fleet Dashboard",
+  "uid": "taasim-live",
+  "version": 1
+}

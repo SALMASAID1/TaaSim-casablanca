@@ -55,8 +55,8 @@ Founder B
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers
-_Free-form notes added during execution._
+Implemented in `spark_jobs/kpi_weekly.py`. All 4 KPIs computed: trips/zone (Spark SQL), avg duration, peak hours (Spark SQL + ROW_NUMBER window), coverage gap. Added kpi_weekly and kpi_peak_hours tables to cassandra_init.cql. Cassandra write with Parquet fallback.

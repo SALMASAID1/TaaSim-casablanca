@@ -48,8 +48,8 @@ Founder B
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers
-_Free-form notes added during execution._
+Implemented 4-panel dashboard in `grafana/provisioning/dashboards/json/taasim-live.json`. Panel 3: KPI Table (queries kpi_weekly). Panel 4: Peak Hours bar chart (queries kpi_peak_hours). Added datasource provisioning and dashboard provisioning YAML files. Dashboard exported to `grafana/dashboards/taasim-live.json`.

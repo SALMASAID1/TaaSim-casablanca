@@ -1,0 +1,21 @@
+# ==========================================================================
+# Grafana Dashboard Provisioning — TaaSim Live Dashboard
+#
+# Auto-loads dashboard JSON files from /var/lib/grafana/dashboards/
+# when Grafana starts (or on file change with updateIntervalSeconds).
+#
+# Reference: https://grafana.com/docs/grafana/latest/administration/provisioning/
+# ==========================================================================
+
+apiVersion: 1
+
+providers:
+  - name: TaaSim Dashboards
+    orgId: 1
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
+      foldersFromFilesStructure: false
