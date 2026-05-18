@@ -18,6 +18,8 @@ probability.
 - [x] Payload fields present: `taxi_id`, `timestamp` (event time ISO-8601), `lat`, `lon`, `speed`, `status`
 - [x] Coordinates have been transformed to Casablanca bounding box (reuses task04 function)
 - [x] Gaussian noise applied: σ ≈ 0.0002 degrees (≈ 20 m)
+- [x] Mapping is relative-position affine with clamped rel coords (Notebook 03 ADR-01)
+- [x] Optional: road map-matching mode (`--mapping-mode road`) with OSM graph cache (`--casa-graphml`)
 - [x] Blackout simulation: with 5% probability per vehicle per event, Kafka send is delayed by
   60–180 seconds (random uniform), producing out-of-order events in the topic
 - [x] Replay speed configurable via `--speed` CLI argument (default: 10×)
@@ -36,6 +38,10 @@ probability.
   duration divided by the speed multiplier.
 - Blackout implementation: use `random.random() < 0.05` per event; if True, schedule the send
   with `time.sleep(random.uniform(60, 180))` in a separate thread so other vehicles continue.
+- For higher-quality Casablanca trajectories, enable `--mapping-mode road` (CSV input only).
+  Requires optional deps: `pip install osmnx networkx`.
+- For curated parquet inputs (Casablanca road geometry), resample polylines into 15s ping series
+  (estimated from `duration_sec`/`distance_km` when present, otherwise using polyline length).
 - Kafka message key as `taxi_id` ensures all GPS events for the same vehicle go to the same
   partition → preserves per-vehicle ordering within a partition.
 - Reference: project brief §2.3 Real-Time Simulation Layer, §9.2 Data Producers.
