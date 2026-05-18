@@ -1,6 +1,6 @@
 # TaaSim · Casablanca — Rapport de Synchronisation d'État (Daily Progress Sync)
 
-**Date du rapport :** 18-05-2026 · 15:45 (Afrique/Casablanca)  
+**Date du rapport :** 18-05-2026 · 17:55 (Afrique/Casablanca)  
 **Calendrier actuel du Lab :** **Semaine 6 sur 8** (Démarre aujourd'hui, 18 mai 2026)  
 **Jalon Chronologique Actuel :** **Sprint 5 — ML, Intelligence & Renforcement de la Sécurité**  
 **État de l'Implémentation Technique :** **Sprint 3 — RocksDB, Matchmaker & Cartes Thermiques (En cours & Pipeline Actif ! 🚀)**  
@@ -85,36 +85,36 @@ Les 12 services du backend sont en ligne et signalés comme sains :
 
 | Service | Conteneur | État | Santé | Port |
 | :--- | :--- | :--- | :--- | :--- |
-| **Kafka (KRaft)** | `taasim-kafka` | ✅ Actif 1h | `healthy` | `9092` |
-| **Kafka UI** | `taasim-kafka-ui` | ✅ Actif 1h | — | `8083 -> 8080` |
-| **Kafka Connect** | `taasim-kafka-connect` | ✅ Actif 1h | `healthy` | `8084 -> 8083` |
-| **MinIO** | `taasim-minio` | ✅ Actif 1h | `healthy` | `9000/9001` |
-| **Cassandra** | `taasim-cassandra` | ✅ Actif 1h | `healthy` | `9042` |
-| **Flink JobManager** | `taasim-flink-jm` | ✅ Actif 1h | `healthy` | `8081` |
-| **Flink TaskManager** | `taasim-flink-tm` | ✅ Actif 1h | — | — |
-| **Spark Master** | `taasim-spark-master` | ✅ Actif 1h | `healthy` | `8080/7077` |
-| **Spark Worker** | `taasim-spark-worker` | ✅ Actif 1h | `healthy` | `8082` |
-| **Notebook Jupyter** | `taasim-jupyter` | ✅ Actif 1h | `healthy` | `8888` |
-| **Grafana** | `taasim-grafana` | ✅ Actif 1h | `healthy` | `3000` |
-| **Service FastAPI** | `taasim-api` | ✅ Actif 1h | `healthy` | `8000` |
+| **Kafka (KRaft)** | `taasim-kafka` | ✅ Actif 3h | `healthy` | `9092` |
+| **Kafka UI** | `taasim-kafka-ui` | ✅ Actif 3h | — | `8083 -> 8080` |
+| **Kafka Connect** | `taasim-kafka-connect` | ✅ Actif 3h | `healthy` | `8084 -> 8083` |
+| **MinIO** | `taasim-minio` | ✅ Actif 3h | `healthy` | `9000/9001` |
+| **Cassandra** | `taasim-cassandra` | ✅ Actif 5m | `healthy` | `9042` |
+| **Flink JobManager** | `taasim-flink-jm` | ✅ Actif 3h | `healthy` | `8081` |
+| **Flink TaskManager** | `taasim-flink-tm` | ✅ Actif 3h | — | — |
+| **Spark Master** | `taasim-spark-master` | ✅ Actif 5m | `healthy` | `8080/7077` |
+| **Spark Worker** | `taasim-spark-worker` | ✅ Actif 5m | `healthy` | `8082` |
+| **Notebook Jupyter** | `taasim-jupyter` | ✅ Actif 5m | `healthy` | `8888` |
+| **Grafana** | `taasim-grafana` | ✅ Actif 3h | `healthy` | `3000` |
+| **Service FastAPI** | `taasim-api` | ✅ Actif 4m | `healthy` | `8000` |
 
 ### 3.2 Intégrations Kafka Connect
 Les deux connecteurs d'archivage S3 sont déployés, s'exécutent activement et archivent les événements Kafka sur MinIO :
-* `s3-sink-raw-gps` (Statut : **RUNNING** ✅ · Décalage : ~80 messages)
-* `s3-sink-raw-trips` (Statut : **RUNNING** ✅ · Décalage : ~50 messages)
+* `s3-sink-raw-gps` (Statut : **RUNNING** ✅ · Décalage : actif)
+* `s3-sink-raw-trips` (Statut : **RUNNING** ✅ · Décalage : actif)
 
 ### 3.3 Diagnostics d'Activité des Flux
 * **Topics & Offsets Kafka :**
-  * `raw.gps` : **5 892 événements bruts** consommés (flux actif)
-  * `raw.trips` : **6 768 événements bruts** consommés (flux actif)
-  * `processed.gps` : **3 350 événements normalisés** produits par le Job Flink 1 (flux actif)
+  * `raw.gps` : **12 564 événements bruts** consommés (flux actif)
+  * `raw.trips` : **12 910 événements bruts** consommés (flux actif)
+  * `processed.gps` : **6 885 événements normalisés** produits par le Job Flink 1 (flux actif)
 * **Volumes de Données Cassandra :**
-  * `taasim.vehicle_positions` : **3 958 lignes** écrites (en augmentation constante !)
+  * `taasim.vehicle_positions` : **1 023 lignes** écrites (en augmentation constante !)
   * `taasim.trips` : **0 ligne** (Le Job 3 n'a pas démarré)
   * `taasim.demand_zones` : **0 ligne** (Le Job 2 n'a pas démarré)
 * **Jobs Flink :**
   * **Job 1 (`job1-gps-normalizer`) :** `RUNNING` (JID : `0c84960f7bd7a460b3b4fdada9231c19`)
-  * **Points de Contrôle (Checkpoints) :** 11 terminés avec succès, 0 échec. Le checkpoint le plus récent `#11` est stocké sur MinIO : `s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/0c84960f7bd7a460b3b4fdada9231c19/chk-11`
+  * **Points de Contrôle (Checkpoints) :** 143 terminés avec succès, 0 échec. Le checkpoint le plus récent `#143` est stocké sur MinIO : `s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/0c84960f7bd7a460b3b4fdada9231c19/chk-143`
 
 ---
 
@@ -125,11 +125,18 @@ Une requête en direct envoyée à `GET /api/v1/vehicles/zone/15` a renvoyé des
 ```json
 [
   {
-    "taxi_id": "20000560",
+    "taxi_id": "20000007",
     "lat": 33.55,
     "lon": -7.5625,
     "status": "available",
-    "event_time": "2026-05-18T14:46:15Z"
+    "event_time": "2026-05-18T16:54:08Z"
+  },
+  {
+    "taxi_id": "20000007",
+    "lat": 33.55,
+    "lon": -7.5625,
+    "status": "available",
+    "event_time": "2026-05-18T16:54:06Z"
   }
 ]
 ```
