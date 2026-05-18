@@ -1,6 +1,6 @@
 # TaaSim · Casablanca — Status Sync Report (Daily Progress Sync)
 
-**Report Date:** 2026-05-18 · 15:45 (Africa/Casablanca)  
+**Report Date:** 2026-05-18 · 17:55 (Africa/Casablanca)  
 **Current Lab Calendar:** **Week 6 of 8** (Starts today, May 18, 2026)  
 **Current Chronological Milestone:** **Sprint 5 — Intelligence & Security Hardening**  
 **Technical Implementation State:** **Sprint 3 — The Matchmaker & Heatmaps (In Progress & Stream Running! 🚀)**  
@@ -85,36 +85,36 @@ All 12 backend services are online and reporting healthy:
 
 | Service | Container | Status | Health | Port Map |
 | :--- | :--- | :--- | :--- | :--- |
-| **Kafka (KRaft)** | `taasim-kafka` | ✅ Up 1h | `healthy` | `9092` |
-| **Kafka UI** | `taasim-kafka-ui` | ✅ Up 1h | — | `8083 -> 8080` |
-| **Kafka Connect** | `taasim-kafka-connect` | ✅ Up 1h | `healthy` | `8084 -> 8083` |
-| **MinIO** | `taasim-minio` | ✅ Up 1h | `healthy` | `9000/9001` |
-| **Cassandra** | `taasim-cassandra` | ✅ Up 1h | `healthy` | `9042` |
-| **Flink JobManager** | `taasim-flink-jm` | ✅ Up 1h | `healthy` | `8081` |
-| **Flink TaskManager** | `taasim-flink-tm` | ✅ Up 1h | — | — |
-| **Spark Master** | `taasim-spark-master` | ✅ Up 1h | `healthy` | `8080/7077` |
-| **Spark Worker** | `taasim-spark-worker` | ✅ Up 1h | `healthy` | `8082` |
-| **Jupyter Notebook** | `taasim-jupyter` | ✅ Up 1h | `healthy` | `8888` |
-| **Grafana** | `taasim-grafana` | ✅ Up 1h | `healthy` | `3000` |
-| **FastAPI Service** | `taasim-api` | ✅ Up 1h | `healthy` | `8000` |
+| **Kafka (KRaft)** | `taasim-kafka` | ✅ Up 3h | `healthy` | `9092` |
+| **Kafka UI** | `taasim-kafka-ui` | ✅ Up 3h | — | `8083 -> 8080` |
+| **Kafka Connect** | `taasim-kafka-connect` | ✅ Up 3h | `healthy` | `8084 -> 8083` |
+| **MinIO** | `taasim-minio` | ✅ Up 3h | `healthy` | `9000/9001` |
+| **Cassandra** | `taasim-cassandra` | ✅ Up 5m | `healthy` | `9042` |
+| **Flink JobManager** | `taasim-flink-jm` | ✅ Up 3h | `healthy` | `8081` |
+| **Flink TaskManager** | `taasim-flink-tm` | ✅ Up 3h | — | — |
+| **Spark Master** | `taasim-spark-master` | ✅ Up 5m | `healthy` | `8080/7077` |
+| **Spark Worker** | `taasim-spark-worker` | ✅ Up 5m | `healthy` | `8082` |
+| **Jupyter Notebook** | `taasim-jupyter` | ✅ Up 5m | `healthy` | `8888` |
+| **Grafana** | `taasim-grafana` | ✅ Up 3h | `healthy` | `3000` |
+| **FastAPI Service** | `taasim-api` | ✅ Up 4m | `healthy` | `8000` |
 
 ### 3.2 Kafka Connect Integrations
 Both S3 archiving connectors are deployed, actively running, and archiving Kafka events to MinIO:
-* `s3-sink-raw-gps` (Status: **RUNNING** ✅ · Lag: ~80 messages)
-* `s3-sink-raw-trips` (Status: **RUNNING** ✅ · Lag: ~50 messages)
+* `s3-sink-raw-gps` (Status: **RUNNING** ✅ · Lag: active)
+* `s3-sink-raw-trips` (Status: **RUNNING** ✅ · Lag: active)
 
 ### 3.3 Stream Activity Diagnostics
 * **Kafka Topics & Offsets:**
-  * `raw.gps`: **5,892 raw events** consumed (flowing active)
-  * `raw.trips`: **6,768 raw events** consumed (flowing active)
-  * `processed.gps`: **3,350 normalized events** produced by Flink Job 1 (flowing active)
+  * `raw.gps`: **12,564 raw events** consumed (flowing active)
+  * `raw.trips`: **12,910 raw events** consumed (flowing active)
+  * `processed.gps`: **6,885 normalized events** produced by Flink Job 1 (flowing active)
 * **Cassandra Data Volumes:**
-  * `taasim.vehicle_positions`: **3,958 rows** written (actively increasing!)
+  * `taasim.vehicle_positions`: **1,023 rows** written (actively increasing!)
   * `taasim.trips`: **0 rows** (Job 3 not started)
   * `taasim.demand_zones`: **0 rows** (Job 2 not started)
 * **Flink Jobs:**
   * **Job 1 (`job1-gps-normalizer`):** `RUNNING` (JID: `0c84960f7bd7a460b3b4fdada9231c19`)
-  * **Checkpoints:** 11 completed, 0 failed. Latest checkpoint `#11` externalized to MinIO: `s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/0c84960f7bd7a460b3b4fdada9231c19/chk-11`
+  * **Checkpoints:** 143 completed, 0 failed. Latest checkpoint `#143` externalized to MinIO: `s3a://taasim/raw/kafka-archive/flink-checkpoints/job1/0c84960f7bd7a460b3b4fdada9231c19/chk-143`
 
 ---
 
@@ -125,11 +125,18 @@ A live query was sent to `GET /api/v1/vehicles/zone/15` and returned data immedi
 ```json
 [
   {
-    "taxi_id": "20000560",
+    "taxi_id": "20000007",
     "lat": 33.55,
     "lon": -7.5625,
     "status": "available",
-    "event_time": "2026-05-18T14:46:15Z"
+    "event_time": "2026-05-18T16:54:08Z"
+  },
+  {
+    "taxi_id": "20000007",
+    "lat": 33.55,
+    "lon": -7.5625,
+    "status": "available",
+    "event_time": "2026-05-18T16:54:06Z"
   }
 ]
 ```
