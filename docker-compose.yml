@@ -145,6 +145,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
 
@@ -487,12 +489,50 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
     depends_on:
       cassandra:
         condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health > /dev/null"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 30s
+
+# ---------------------------------------------------------------------------
+# 7. TAASIM API — FastAPI public interface
+# ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./src/api
+      dockerfile: Dockerfile
+    container_name: taasim-api
+    hostname: api
+    networks:
+      - taasim
+    ports:
+      - "8000:8000"
+    environment:
+      CASSANDRA_HOST: cassandra
+      CASSANDRA_PORT: "9042"
+      CASSANDRA_KEYSPACE: taasim
+      KAFKA_BROKER: kafka:29092
+      KAFKA_TRIPS_TOPIC: raw.trips
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ > /dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
