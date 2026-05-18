@@ -2,22 +2,22 @@
 spark_jobs/etl_porto.py — Spark ETL: Porto Taxi Trip Dataset
 =============================================================
 
-Sprint 4, Task 01  (v2 — optimised for single-worker cluster)
+Sprint 4, Task 01  (v3 — optimised for single-worker cluster)
 
 Purpose:
     Reads the raw Porto taxi CSV from MinIO (s3a://taasim/raw/porto-trips/train.csv),
-    parses the POLYLINE JSON column to extract representative GPS coordinates,
-    assigns each trip to a Casablanca arrondissement via a broadcast zone-mapping join,
+    parses the POLYLINE JSON column to extract origin/destination GPS coordinates,
+    maps Porto coordinates into the Casablanca frame via an ADR-01 affine bbox transform,
+    assigns each trip to Casablanca arrondissements via a broadcast zone-mapping join,
     deduplicates trips, and writes the cleaned dataset as Parquet partitioned by year_month.
 
-Performance optimisations (v2):
+Performance optimisations (v3):
     1. Filter MISSING_DATA and deduplicate BEFORE parsing polylines (1.7M → ~1.5M)
-    2. Extract only the FIRST GPS coordinate per trip (no explode of all points)
+    2. Extract origin + destination points per trip (first/last) without exploding all GPS points
        → keeps row count at 1.5M instead of exploding to 80M+
     3. Compute gps_point_count from the array SIZE() without exploding
-    4. Use hash-based zone assignment instead of expensive cross-join
-    5. Removed all intermediate .count() calls (lazy evaluation only)
-    6. Single .count() at audit stage using .cache()
+    4. Zone mapping via broadcast bbox join; unmatched are explicitly tagged out_of_bounds
+    5. Single cache materialization + one aggregation action for audit metrics/gates
 
 Output:
     s3a://taasim/curated/porto-trips/   (Parquet, snappy, partitioned by year_month)
@@ -31,8 +31,19 @@ import logging
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, from_json, broadcast, lit, size, abs as spark_abs,
-    from_unixtime, date_format, when, hash as spark_hash
+    broadcast,
+    col,
+    count as spark_count,
+    date_format,
+    element_at,
+    from_json,
+    from_unixtime,
+    greatest,
+    least,
+    lit,
+    size,
+    sum as spark_sum,
+    when,
 )
 from pyspark.sql.types import ArrayType, DoubleType
 
@@ -49,11 +60,16 @@ RAW_PATH       = "s3a://taasim/raw/porto-trips/train.csv"
 ZONE_MAP_PATH  = "s3a://taasim/metadata/zone_mapping.csv"
 OUTPUT_PATH    = "s3a://taasim/curated/porto-trips/"
 
-# Porto GPS bounding box (approximate centre for normalisation)
-# Porto centre:  lat ≈ 41.15,  lon ≈ -8.61
-# Casablanca:    lat ≈ 33.57,  lon ≈ -7.59
-LAT_SHIFT = 33.57 - 41.15   # ≈ -7.58
-LON_SHIFT = -7.59 - (-8.61) # ≈ +1.02
+# ADR-01 affine mapping: relative-position bbox transform (Porto → Casablanca)
+# Source bbox (task04 hints): lon [-8.7, -8.5], lat [41.1, 41.2]
+PORTO_BBOX = {"min_lon": -8.7, "max_lon": -8.5, "min_lat": 41.1, "max_lat": 41.2}
+
+# Target bbox: union of metadata/zone_mapping.csv (maximizes zone join success)
+CASA_BBOX = {"min_lon": -7.730, "max_lon": -7.480, "min_lat": 33.510, "max_lat": 33.645}
+
+# Data-quality gates (fail fast if mapping is wrong)
+MAX_OUT_OF_BOUNDS_RATE = 0.01  # 1%
+MAX_CLAMP_RATE = 0.01          # 1% (warn above; raise once stable)
 
 POLYLINE_SCHEMA = ArrayType(ArrayType(DoubleType()))
 
@@ -77,6 +93,35 @@ def create_spark_session():
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         .getOrCreate()
     )
+
+
+def affine_bbox_map(lon_col, lat_col, src_bbox, dst_bbox):
+    """ADR-01: map (lon, lat) from src_bbox to dst_bbox via relative position.
+
+    Returns: (dst_lon_col, dst_lat_col, clamped_bool_col)
+    - Clamps relative coordinates to [0, 1] (matches Notebook 03 behavior)
+    - Emits a boolean flag when clamping occurred (quality metric)
+    """
+    src_lon_span = float(src_bbox["max_lon"] - src_bbox["min_lon"])
+    src_lat_span = float(src_bbox["max_lat"] - src_bbox["min_lat"])
+    dst_lon_span = float(dst_bbox["max_lon"] - dst_bbox["min_lon"])
+    dst_lat_span = float(dst_bbox["max_lat"] - dst_bbox["min_lat"])
+
+    rel_lon_raw = (lon_col - lit(src_bbox["min_lon"])) / lit(src_lon_span)
+    rel_lat_raw = (lat_col - lit(src_bbox["min_lat"])) / lit(src_lat_span)
+
+    clamped = (
+        (rel_lon_raw < lit(0.0)) | (rel_lon_raw > lit(1.0)) |
+        (rel_lat_raw < lit(0.0)) | (rel_lat_raw > lit(1.0))
+    )
+
+    rel_lon = greatest(lit(0.0), least(lit(1.0), rel_lon_raw))
+    rel_lat = greatest(lit(0.0), least(lit(1.0), rel_lat_raw))
+
+    dst_lon = lit(dst_bbox["min_lon"]) + rel_lon * lit(dst_lon_span)
+    dst_lat = lit(dst_bbox["min_lat"]) + rel_lat * lit(dst_lat_span)
+
+    return dst_lon, dst_lat, clamped
 
 
 def main():
@@ -129,37 +174,60 @@ def main():
         logger.info("  Filters applied (lazy) — MISSING_DATA removed, POLYLINE checked, TRIP_ID deduped")
 
         # ==================================================================
-        # STEP 3: Parse POLYLINE — extract FIRST coordinate only
-        #   - Instead of explode (1 trip → 50+ rows), we just take coords[0]
+        # STEP 3: Parse POLYLINE — extract ORIGIN + DESTINATION (no explode)
+        #   - Instead of explode (1 trip → 50+ rows), we take first/last points
         #   - Also compute gps_point_count = SIZE(coords) for duration calc later
-        #   - This keeps the DataFrame at ~1.5M rows (not 80M+)
+        #   - Apply ADR-01 affine bbox mapping (Porto → Casablanca)
         # ==================================================================
-        logger.info("[STEP 3] Parsing POLYLINE — extracting first GPS point + point count ...")
+        logger.info("[STEP 3] Parsing POLYLINE — extracting origin/destination + point count ...")
 
         df = df.withColumn("coords", from_json(col("POLYLINE"), POLYLINE_SCHEMA))
 
         # Filter: coords must be non-null and have at least 1 point
         df = df.filter(col("coords").isNotNull() & (size("coords") > 0))
 
-        # Extract first GPS coordinate [lon, lat] as representative trip point
+        # Extract raw origin/destination points (Porto coordinate space)
+        last_pt = element_at(col("coords"), -1)
         df = (
             df
-            .withColumn("lon_raw", col("coords")[0][0])
-            .withColumn("lat_raw", col("coords")[0][1])
-            # Count total GPS points per trip (for duration calc in KPI job)
+            .withColumn("origin_lon_raw", col("coords")[0][0])
+            .withColumn("origin_lat_raw", col("coords")[0][1])
+            .withColumn("dest_lon_raw", last_pt.getItem(0))
+            .withColumn("dest_lat_raw", last_pt.getItem(1))
             .withColumn("gps_point_count", size("coords"))
         )
 
-        # Shift Porto coordinates → Casablanca bounding box
-        df = (
-            df
-            .withColumn("lon", col("lon_raw") + lit(LON_SHIFT))
-            .withColumn("lat", col("lat_raw") + lit(LAT_SHIFT))
+        # ADR-01 affine mapping: Porto bbox → Casablanca bbox (relative position)
+        origin_lon, origin_lat, origin_clamped = affine_bbox_map(
+            col("origin_lon_raw"), col("origin_lat_raw"), PORTO_BBOX, CASA_BBOX
+        )
+        dest_lon, dest_lat, dest_clamped = affine_bbox_map(
+            col("dest_lon_raw"), col("dest_lat_raw"), PORTO_BBOX, CASA_BBOX
         )
 
-        # Drop heavy columns we no longer need
-        df = df.drop("coords", "POLYLINE", "lon_raw", "lat_raw")
-        logger.info("  POLYLINE parsed — first GPS point extracted, gps_point_count computed")
+        df = (
+            df
+            .withColumn("origin_lon", origin_lon)
+            .withColumn("origin_lat", origin_lat)
+            .withColumn("dest_lon", dest_lon)
+            .withColumn("dest_lat", dest_lat)
+            .withColumn("origin_clamped", origin_clamped)
+            .withColumn("dest_clamped", dest_clamped)
+            # Backward compatibility: representative trip point = origin
+            .withColumn("lon", col("origin_lon"))
+            .withColumn("lat", col("origin_lat"))
+        )
+
+        # Drop heavy and intermediate columns
+        df = df.drop(
+            "coords",
+            "POLYLINE",
+            "origin_lon_raw",
+            "origin_lat_raw",
+            "dest_lon_raw",
+            "dest_lat_raw",
+        )
+        logger.info("  POLYLINE parsed — origin/destination mapped via affine bbox transform")
 
         # ==================================================================
         # STEP 4: Derive year_month partition key from TIMESTAMP
@@ -186,50 +254,151 @@ def main():
         )
 
         # Broadcast the 16-row zone table to every executor
-        # Range-based join: each GPS point matched to its bounding-box zone
+        # Range-based joins: origin and destination points matched to bbox zones
+
+        zone_df_origin = zone_df.select(
+            col("arrondissement_id").alias("origin_arrondissement_id"),
+            col("zone_name").alias("origin_zone_name"),
+            col("lon_min").alias("origin_lon_min"),
+            col("lon_max").alias("origin_lon_max"),
+            col("lat_min").alias("origin_lat_min"),
+            col("lat_max").alias("origin_lat_max"),
+        )
+
         df = df.join(
-            broadcast(zone_df),
-            (col("lon") >= col("lon_min")) &
-            (col("lon") <= col("lon_max")) &
-            (col("lat") >= col("lat_min")) &
-            (col("lat") <= col("lat_max")),
-            "left"
+            broadcast(zone_df_origin),
+            (col("origin_lon") >= col("origin_lon_min")) &
+            (col("origin_lon") <= col("origin_lon_max")) &
+            (col("origin_lat") >= col("origin_lat_min")) &
+            (col("origin_lat") <= col("origin_lat_max")),
+            "left",
         )
 
-        # For GPS points that didn't fall in any zone, assign via hash
-        # This ensures every trip gets a zone (no NULLs)
-        df = df.withColumn(
-            "arrondissement_id",
-            when(col("arrondissement_id").isNotNull(), col("arrondissement_id"))
-            .otherwise((spark_abs(spark_hash("TRIP_ID")) % 16) + 1)
+        df = (
+            df
+            .withColumn(
+                "origin_zone_assignment_method",
+                when(col("origin_arrondissement_id").isNotNull(), lit("bbox"))
+                .otherwise(lit("out_of_bounds")),
+            )
+            .withColumn(
+                "origin_arrondissement_id",
+                when(col("origin_arrondissement_id").isNotNull(), col("origin_arrondissement_id"))
+                .otherwise(lit(0)),
+            )
+            .withColumn(
+                "origin_zone_name",
+                when(col("origin_zone_name").isNotNull(), col("origin_zone_name"))
+                .otherwise(lit("Out-of-bounds")),
+            )
+            # Backward compatibility: legacy zone fields = origin zone
+            .withColumn("arrondissement_id", col("origin_arrondissement_id"))
+            .withColumn("zone_name", col("origin_zone_name"))
+            .withColumn("zone_assignment_method", col("origin_zone_assignment_method"))
         )
 
-        # Fill zone_name for hash-assigned zones
-        df = df.withColumn(
-            "zone_name",
-            when(col("zone_name").isNotNull(), col("zone_name"))
-            .otherwise(lit("Zone-Assigned"))
+        df = df.drop("origin_lon_min", "origin_lon_max", "origin_lat_min", "origin_lat_max")
+
+        zone_df_dest = zone_df.select(
+            col("arrondissement_id").alias("dest_arrondissement_id"),
+            col("zone_name").alias("dest_zone_name"),
+            col("lon_min").alias("dest_lon_min"),
+            col("lon_max").alias("dest_lon_max"),
+            col("lat_min").alias("dest_lat_min"),
+            col("lat_max").alias("dest_lat_max"),
         )
+
+        df = df.join(
+            broadcast(zone_df_dest),
+            (col("dest_lon") >= col("dest_lon_min")) &
+            (col("dest_lon") <= col("dest_lon_max")) &
+            (col("dest_lat") >= col("dest_lat_min")) &
+            (col("dest_lat") <= col("dest_lat_max")),
+            "left",
+        )
+
+        df = (
+            df
+            .withColumn(
+                "dest_zone_assignment_method",
+                when(col("dest_arrondissement_id").isNotNull(), lit("bbox"))
+                .otherwise(lit("out_of_bounds")),
+            )
+            .withColumn(
+                "dest_arrondissement_id",
+                when(col("dest_arrondissement_id").isNotNull(), col("dest_arrondissement_id"))
+                .otherwise(lit(0)),
+            )
+            .withColumn(
+                "dest_zone_name",
+                when(col("dest_zone_name").isNotNull(), col("dest_zone_name"))
+                .otherwise(lit("Out-of-bounds")),
+            )
+        )
+
+        df = df.drop("dest_lon_min", "dest_lon_max", "dest_lat_min", "dest_lat_max")
 
         # Add zone_type
         df = df.withColumn(
             "zone_type",
-            when(col("arrondissement_id") <= 5, lit("commercial"))
+            when(col("arrondissement_id") == 0, lit("out_of_bounds"))
+            .when(col("arrondissement_id") <= 5, lit("commercial"))
             .when(col("arrondissement_id") <= 10, lit("residential"))
             .otherwise(lit("suburban"))
         )
 
-        # Drop bounding box columns
-        df = df.drop("lon_min", "lon_max", "lat_min", "lat_max")
-        logger.info("  Zone remapping applied (broadcast join)")
+        logger.info("  Zone remapping applied (broadcast joins: origin + destination)")
 
         # ==================================================================
-        # STEP 6: Cache + audit count (single action triggers the pipeline)
+        # STEP 6: Cache + audit metrics + data-quality gates
+        #   - One aggregation action (materializes cache) for all metrics
         # ==================================================================
-        logger.info("[STEP 6] Caching final DataFrame and computing audit count ...")
+        logger.info("[STEP 6] Caching final DataFrame and computing audit metrics ...")
         df = df.cache()
-        final_count = df.count()
-        logger.info("  ✅ Final row count after all transforms: %d", final_count)
+
+        audit = (
+            df.agg(
+                spark_count(lit(1)).alias("total_trips"),
+                spark_sum(when(col("origin_arrondissement_id") == 0, 1).otherwise(0)).alias("origin_out_of_bounds"),
+                spark_sum(when(col("dest_arrondissement_id") == 0, 1).otherwise(0)).alias("dest_out_of_bounds"),
+                spark_sum(col("origin_clamped").cast("int")).alias("origin_clamped"),
+                spark_sum(col("dest_clamped").cast("int")).alias("dest_clamped"),
+            )
+            .collect()[0]
+        )
+
+        total_trips = int(audit["total_trips"])
+        origin_oob = int(audit["origin_out_of_bounds"])
+        dest_oob = int(audit["dest_out_of_bounds"])
+        origin_clamped = int(audit["origin_clamped"])
+        dest_clamped = int(audit["dest_clamped"])
+
+        origin_oob_rate = (origin_oob / total_trips) if total_trips else 0.0
+        dest_oob_rate = (dest_oob / total_trips) if total_trips else 0.0
+        origin_clamp_rate = (origin_clamped / total_trips) if total_trips else 0.0
+        dest_clamp_rate = (dest_clamped / total_trips) if total_trips else 0.0
+
+        logger.info("  ✅ Total trips: %d", total_trips)
+        logger.info("  Origin out_of_bounds: %d (%.3f%%)", origin_oob, origin_oob_rate * 100)
+        logger.info("  Dest   out_of_bounds: %d (%.3f%%)", dest_oob, dest_oob_rate * 100)
+        logger.info("  Origin clamped: %d (%.3f%%)", origin_clamped, origin_clamp_rate * 100)
+        logger.info("  Dest   clamped: %d (%.3f%%)", dest_clamped, dest_clamp_rate * 100)
+
+        if origin_clamp_rate > MAX_CLAMP_RATE or dest_clamp_rate > MAX_CLAMP_RATE:
+            logger.warning(
+                "  ⚠️ Clamp rate above threshold (max=%.3f%%) — check PORTO_BBOX/CASA_BBOX assumptions",
+                MAX_CLAMP_RATE * 100,
+            )
+
+        if origin_oob_rate > MAX_OUT_OF_BOUNDS_RATE or dest_oob_rate > MAX_OUT_OF_BOUNDS_RATE:
+            raise RuntimeError(
+                "Zone join out_of_bounds rate too high: "
+                f"origin={origin_oob_rate:.4%}, dest={dest_oob_rate:.4%} (max={MAX_OUT_OF_BOUNDS_RATE:.4%}). "
+                "Check affine bbox mapping and zone_mapping.csv bbox coverage."
+            )
+
+        # Audit-only columns are not needed in the curated output
+        df = df.drop("origin_clamped", "dest_clamped")
 
         # ==================================================================
         # STEP 7: Write Parquet (partitioned by year_month)

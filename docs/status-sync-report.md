@@ -136,6 +136,10 @@ You asked if the `vehicle_gps_producer.py` needs to be adapted based on `03_map_
 - **CSV Mode:** Handles the live simulation by applying the relative coordinate transform (Porto → Casablanca bbox affine mapping).
 - **Parquet Mode:** **[UPDATED]** If you pass the curated output of Notebook 03 (`--data-path s3://taasim/curated/mapped_casa_trips/`), the producer now correctly parses the exact road-snapped `polyline` arrays, completely bypassing the bbox affine mapping. This means you can now replay the high-fidelity, road-matched Casablanca trips directly into the real-time stream!
 
+**Batch Spark alignment (ETL)**
+- `spark_jobs/etl_porto.py` now uses the same ADR-01 relative-position bbox affine mapping (not a constant shift).
+- Hash-based zone fallback is removed; unmatched points are explicitly tagged as `out_of_bounds` (zone_id=0) and the job fails if the out_of_bounds rate exceeds a threshold.
+
 ### 3.3 Flink Jobs
 
 | Job | Source Code | JAR | Currently Running | Status |

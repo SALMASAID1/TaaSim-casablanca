@@ -1,33 +1,15 @@
 """
-spark_jobs/etl_nyc_tlc.py — Spark ETL: NYC TLC Yellow Taxi Dataset
-===================================================================
+spark_jobs/etl_nyc_tlc.py — Spark ETL: Logical NYC-to-Casablanca Projection
+==========================================================================
 
-Sprint 4, Task 02
+Sprint 4, Task 02 (Logical Spatial Projection & Quality Enforcement)
 
-Purpose:
-    Reads 3 months of NYC TLC Yellow Taxi Parquet data from MinIO,
-    computes per-zone-per-hour demand aggregates, and writes the results
-    to s3a://taasim/curated/demand-by-zone/.
-
-    This is TaaSim's large-scale Spark exercise: ~30M rows across 3 months.
-    The focus is on real Spark optimisation: partitioning, broadcast joins,
-    and columnar Parquet reads.
-
-Output:
-    s3a://taasim/curated/demand-by-zone/   (Parquet, snappy)
-
-    Schema:
-        PULocationID     int        — NYC pickup zone (maps to Casablanca arrondissement)
-        hour_of_day      int        — Hour of pickup (0-23)
-        day_of_week      int        — Day of week (1=Sunday ... 7=Saturday)
-        trip_count        long       — Number of trips
-        avg_distance     double     — Average trip distance (miles)
-        avg_fare         double     — Average fare amount ($)
-        arrondissement_id int       — Mapped Casablanca zone
-        zone_name        text       — Casablanca zone name
-
-Run inside the Jupyter container:
-    spark-submit --master spark://spark-master:7077 spark_jobs/etl_nyc_tlc.py
+Strategy:
+    1. Define a tight Urban Core for Casablanca to avoid the Atlantic Ocean.
+    2. Use the original NYC 'trip_distance' as a constraint.
+    3. Remove 'illogical' trips (Out of bounds, Speed > 120km/h, Zero distance).
+    4. Calculate the Dropoff using the 'Destination Point' formula (Spherical Trig).
+    5. COASTLINE FILTER: Use a linear function to ensure no trips are on the beach or in water.
 """
 
 import time
@@ -35,7 +17,9 @@ import logging
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, hour, dayofweek, count, avg, broadcast, lit, expr
+    col, hour, dayofweek, count, avg, broadcast, lit, expr, when,
+    rand, asin, sin, cos, atan2, sqrt, pow, radians, degrees, floor, concat_ws,
+    unix_timestamp
 )
 
 # ---------------------------------------------------------------------------
@@ -45,27 +29,22 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("etl_nyc_tlc")
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants & Urban Boundaries
 # ---------------------------------------------------------------------------
-RAW_PATH       = "s3a://taasim/raw/nyc-tlc/*.parquet"
-ZONE_MAP_PATH  = "s3a://taasim/metadata/zone_mapping.csv"
-OUTPUT_PATH    = "s3a://taasim/curated/demand-by-zone/"
+RAW_PATH       = "s3a://taasim/raw/nyc-tlc/yellow_tripdata_2019-01.parquet"
+ML_OUTPUT_PATH = "s3a://taasim/curated/nyc-ml-features/"
 
+# Refined Urban Core (Avoids Ocean and Suburbs)
+MIN_LON, MAX_LON = -7.68, -7.58
+MIN_LAT, MAX_LAT = 33.52, 33.60
+EARTH_RADIUS_KM = 6371.0
+GRID_SIZE = 20
 
 def create_spark_session():
-    """Create a SparkSession optimised for the NYC TLC workload."""
     return (
         SparkSession.builder
-        .appName("TaaSim — ETL NYC TLC Demand Aggregates")
+        .appName("TaaSim — Logical NYC Projection")
         .master("spark://spark-master:7077")
-        # --- Performance tuning ---
-        # 16 shuffle partitions (not default 200) for local cluster
-        .config("spark.sql.shuffle.partitions", "16")
-        .config("spark.default.parallelism", "8")
-        # Memory: ensure worker stays within 4GB budget
-        .config("spark.executor.memory", "2g")
-        .config("spark.driver.memory", "1g")
-        # --- S3A / MinIO ---
         .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
@@ -73,232 +52,124 @@ def create_spark_session():
         .getOrCreate()
     )
 
-
-def read_raw_data(spark):
+def remove_illogical_trips(df):
     """
-    Read 3 months of NYC TLC Yellow Taxi Parquet from MinIO.
-
-    Uses wildcard path to read all .parquet files in one call.
-    Parquet columnar format allows Spark to push down column selection,
-    only reading the 5 columns we need (not all 18).
+    Quality enforcement layer to remove noise and data errors.
     """
-    logger.info("Reading NYC TLC Parquet from %s ...", RAW_PATH)
-
-    df = spark.read.parquet(RAW_PATH)
-
-    total_rows = df.count()
-    logger.info("Total rows loaded: %d (~%.1f M)", total_rows, total_rows / 1_000_000)
-    logger.info("Schema:")
-    df.printSchema()
-
-    return df, total_rows
-
-
-def select_and_filter(df):
-    """
-    Select only the relevant columns and filter invalid records.
-
-    Columns used (from task spec):
-        - tpep_pickup_datetime: timestamp of pickup
-        - PULocationID:         pickup location zone ID
-        - trip_distance:        trip distance in miles
-        - fare_amount:          fare in dollars
-        - passenger_count:      number of passengers
-
-    Filters:
-        - Non-null pickup datetime
-        - trip_distance > 0
-        - fare_amount > 0
-        - PULocationID is not null
-    """
-    logger.info("Selecting relevant columns and filtering invalid records ...")
-
-    df = df.select(
-        "tpep_pickup_datetime",
-        "PULocationID",
-        "trip_distance",
-        "fare_amount",
-        "passenger_count"
-    )
-
-    # Filter out invalid rows
-    df_clean = (
-        df
-        .filter(col("tpep_pickup_datetime").isNotNull())
-        .filter(col("PULocationID").isNotNull())
-        .filter(col("trip_distance") > 0)
-        .filter(col("fare_amount") > 0)
-    )
-
-    clean_count = df_clean.count()
-    logger.info("Rows after filtering: %d", clean_count)
-
-    return df_clean
-
-
-def extract_time_features(df):
-    """
-    Extract temporal features from the pickup datetime:
-        - hour_of_day (0-23): for hourly demand analysis
-        - day_of_week (1-7):  for weekly pattern analysis
-    """
-    logger.info("Extracting hour_of_day and day_of_week ...")
-
-    df = (
-        df
-        .withColumn("hour_of_day", hour("tpep_pickup_datetime"))
-        .withColumn("day_of_week", dayofweek("tpep_pickup_datetime"))
-    )
-
+    logger.info("Applying Quality Enforcement (Removing Illogical Trips)...")
+    
+    # 1. Basic cleaning: positive metrics
+    df = df.filter((col("trip_distance") > 0.1) & (col("fare_amount") > 2.5))
+    
+    # 2. Time-based logic: Trip must have a valid duration
+    if "tpep_dropoff_datetime" in df.columns:
+        df = df.withColumn("duration_sec", 
+            unix_timestamp("tpep_dropoff_datetime") - unix_timestamp("tpep_pickup_datetime")
+        )
+        df = df.filter((col("duration_sec") >= 60) & (col("duration_sec") <= 10800))
+        
+        # 3. Speed logic: Average speed max 100km/h
+        df = df.withColumn("avg_speed_kmh", 
+            (col("trip_distance") * 1.60934) / (col("duration_sec") / 3600)
+        )
+        df = df.filter(col("avg_speed_kmh") <= 100)
+        
     return df
 
-
-def apply_zone_mapping(df, spark):
+def apply_logical_projection(df):
     """
-    Map NYC PULocationID to Casablanca arrondissements via broadcast join.
-
-    NYC uses PULocationID (1-263), Casablanca has 16 arrondissements (1-16).
-    We map using modular arithmetic: arrondissement_id = (PULocationID % 16) + 1
-
-    This demonstrates the broadcast join pattern required by the acceptance criteria:
-    the 16-row zone reference table is broadcast to all executors.
+    Implements the 'Destination Point' formula and the Linear Coastline Mask.
     """
-    logger.info("Loading zone mapping from %s ...", ZONE_MAP_PATH)
+    logger.info("Applying Logical Distance-Preserving Projection...")
+    
+    # 1. Convert Miles to KM
+    df = df.withColumn("orig_dist_km", col("trip_distance") * 1.60934)
+    
+    # 2. Derive deterministic start/end zones from PULocationID/DOLocationID
+    # This ensures trips from the same NYC zone map to the same Casablanca area.
+    df = df.withColumn("start_x", col("PULocationID") % lit(GRID_SIZE)) \
+           .withColumn("start_y", (col("PULocationID") / lit(GRID_SIZE)).cast("int") % lit(GRID_SIZE)) \
+           .withColumn("target_x", col("DOLocationID") % lit(GRID_SIZE)) \
+           .withColumn("target_y", (col("DOLocationID") / lit(GRID_SIZE)).cast("int") % lit(GRID_SIZE))
+    
+    # 3. Pick a semi-random Pickup inside the mapped Start Zone
+    cell_width = (MAX_LON - MIN_LON) / GRID_SIZE
+    cell_height = (MAX_LAT - MIN_LAT) / GRID_SIZE
+    
+    df = df.withColumn("pickup_lon", lit(MIN_LON) + (col("start_x") + rand()) * lit(cell_width)) \
+           .withColumn("pickup_lat", lit(MIN_LAT) + (col("start_y") + rand()) * lit(cell_height))
+    
+    # 4. Generate bearing based on the vector from Start Zone to Target Zone
+    # If Start == Target (intra-zone), fallback to random bearing
+    df = df.withColumn("bearing", when(
+        col("PULocationID") != col("DOLocationID"),
+        atan2(col("target_y") - col("start_y"), col("target_x") - col("start_x"))
+    ).otherwise(rand() * 2 * 3.1415926535))
+    
+    # 5. Math: Spherical Trig to find Dropoff Coordinate using original distance
+    lat1 = radians(col("pickup_lat"))
+    lon1 = radians(col("pickup_lon"))
+    d_r = col("orig_dist_km") / lit(EARTH_RADIUS_KM)
+    
+    df = df.withColumn("dropoff_lat_rad", asin(
+        sin(lat1) * cos(d_r) + cos(lat1) * sin(d_r) * cos(col("bearing"))
+    ))
+    
+    df = df.withColumn("dropoff_lon_rad", lon1 + atan2(
+        sin(col("bearing")) * sin(d_r) * cos(lat1),
+        cos(d_r) - sin(lat1) * sin(col("dropoff_lat_rad"))
+    ))
+    
+    # Convert back to degrees
+    df = df.withColumn("dropoff_lat", degrees(col("dropoff_lat_rad"))) \
+           .withColumn("dropoff_lon", degrees(col("dropoff_lon_rad")))
+    
+    # 5. COASTLINE FILTER: Discard trips on the beach or in water
+    # Logic: Casablanca coastline follows Lat = 0.3 * Lon + 35.88
+    # Any trip ABOVE this line is in the water/sand.
+    df = df.filter(col("dropoff_lat") < (col("dropoff_lon") * 0.3 + 35.88))
+    df = df.filter(col("pickup_lat") < (col("pickup_lon") * 0.3 + 35.88))
+    
+    # Ensure it's within a reasonable long range
+    df = df.filter((col("dropoff_lon") >= -7.75) & (col("dropoff_lon") <= -7.45))
+    
+    # 6. Grid Zoning (20x20)
+    cell_width = (MAX_LON - MIN_LON) / GRID_SIZE
+    cell_height = (MAX_LAT - MIN_LAT) / GRID_SIZE
+    
+    df = df.withColumn("grid_x", floor((col("pickup_lon") - lit(MIN_LON)) / lit(cell_width)).cast("int")) \
+           .withColumn("grid_y", floor((col("pickup_lat") - lit(MIN_LAT)) / lit(cell_height)).cast("int")) \
+           .withColumn("pickup_zone_id", concat_ws("_", col("grid_x"), col("grid_y")))
+    
+    return df
 
-    zone_df = (
-        spark.read
-        .option("header", "true")
-        .option("inferSchema", "true")
-        .csv(ZONE_MAP_PATH)
-    )
-    logger.info("Zone mapping loaded — %d zones", zone_df.count())
-
-    # Create the mapping column: PULocationID → arrondissement_id
-    df = df.withColumn(
-        "mapped_zone_id",
-        (col("PULocationID") % 16) + 1
-    )
-
-    # ---- BROADCAST JOIN ----
-    # The zone table (16 rows) is broadcast to every executor.
-    # This avoids a shuffle join on the ~30M row dataset.
-    # (Acceptance criteria: "At least one broadcast join used — documented in code comments")
-    logger.info("Applying broadcast join with zone reference table ...")
-    df_zoned = df.join(
-        broadcast(zone_df),
-        df["mapped_zone_id"] == zone_df["arrondissement_id"],
-        "left"
-    )
-
-    # Clean up: drop intermediate and bounding-box columns
-    df_zoned = df_zoned.drop(
-        "mapped_zone_id", "lon_min", "lon_max", "lat_min", "lat_max"
-    )
-
-    logger.info("Broadcast zone mapping complete")
-    return df_zoned
-
-
-def compute_demand_aggregates(df):
-    """
-    Compute per-zone-per-hour demand aggregates.
-
-    Grouping key: (PULocationID, hour_of_day, day_of_week)
-
-    Metrics:
-        - trip_count:    total number of trips
-        - avg_distance:  average trip distance in miles
-        - avg_fare:      average fare amount in dollars
-    """
-    logger.info("Computing demand aggregates ...")
-
-    agg_df = (
-        df.groupBy("PULocationID", "hour_of_day", "day_of_week",
-                    "arrondissement_id", "zone_name")
-        .agg(
-            count("*").alias("trip_count"),
-            avg("trip_distance").alias("avg_distance"),
-            avg("fare_amount").alias("avg_fare")
-        )
-    )
-
-    agg_count = agg_df.count()
-    logger.info("Aggregate rows: %d", agg_count)
-
-    return agg_df
-
-
-def write_parquet(df):
-    """Write the aggregated demand data as Parquet to MinIO."""
-    logger.info("Writing demand aggregates to %s ...", OUTPUT_PATH)
-
-    (
-        df.write
-        .mode("overwrite")
-        .option("compression", "snappy")
-        .parquet(OUTPUT_PATH)
-    )
-
-    logger.info("Parquet write complete")
-
-
-def validate_output(spark):
-    """Re-read output and validate."""
-    logger.info("Validating output ...")
-    df = spark.read.parquet(OUTPUT_PATH)
-    df.printSchema()
-    row_count = df.count()
-    logger.info("Output row count: %d", row_count)
-    logger.info("Sample rows:")
-    df.show(10, truncate=False)
-    return row_count
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
-    logger.info("=" * 70)
-    logger.info("TaaSim ETL — NYC TLC Yellow Taxi Dataset")
-    logger.info("=" * 70)
-
-    start_time = time.time()
     spark = create_spark_session()
-    logger.info("SparkSession created — app: %s", spark.sparkContext.appName)
-
     try:
-        # 1. Read raw Parquet (3 months, ~30M rows)
-        df, total_rows = read_raw_data(spark)
-
-        # 2. Select relevant columns + filter invalid records
-        df = select_and_filter(df)
-
-        # 3. Extract temporal features
-        df = extract_time_features(df)
-
-        # 4. Apply zone mapping (broadcast join)
-        df = apply_zone_mapping(df, spark)
-
-        # 5. Compute per-zone-per-hour aggregates
-        agg_df = compute_demand_aggregates(df)
-
-        # 6. Write Parquet
-        write_parquet(agg_df)
-
-        # 7. Validate output
-        validate_output(spark)
-
+        logger.info("Reading raw data...")
+        df = spark.read.parquet(RAW_PATH).select(
+            "tpep_pickup_datetime", "tpep_dropoff_datetime", 
+            "trip_distance", "fare_amount", "passenger_count",
+            "PULocationID", "DOLocationID"
+        )
+        
+        # 1. Quality Enforcement
+        df = remove_illogical_trips(df)
+        
+        # 2. Apply Spatial Logic
+        df = apply_logical_projection(df)
+        
+        # 3. Feature Extraction
+        df = df.withColumn("hour_of_day", hour(col("tpep_pickup_datetime"))) \
+               .withColumn("day_of_week", dayofweek(col("tpep_pickup_datetime")))
+        
+        logger.info("Writing curated ML features...")
+        df.write.mode("overwrite").parquet(ML_OUTPUT_PATH)
+        
+        logger.info("ETL Success. Total Clean Urban Trips: %d", df.count())
+        
     finally:
         spark.stop()
-
-    elapsed = time.time() - start_time
-    logger.info("=" * 70)
-    logger.info("ETL complete in %.1f seconds (%.1f minutes)", elapsed, elapsed / 60)
-    logger.info("Total input: %d rows (~%.1f M)", total_rows, total_rows / 1_000_000)
-    logger.info("No stage should exceed 3 minutes — verify in Spark UI at :8080")
-    logger.info("Spark UI screenshots → docs/spark-nyc-ui.png")
-    logger.info("=" * 70)
-
 
 if __name__ == "__main__":
     main()

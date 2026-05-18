@@ -52,3 +52,8 @@ Founder B
 
 ## Notes / Blockers
 _Free-form notes added during execution._
+
+### Implementation note (production vs validation)
+- Validation work can use `from_json` + `explode` to create one row per GPS point for plotting and visual checks.
+- Production batch ETL (`spark_jobs/etl_porto.py`) keeps **one row per trip** for SLA/performance, mapping **origin + destination** (first/last points) via the ADR‑01 relative-position bbox affine transform.
+- Zone mapping tags unmatched points as `out_of_bounds` (zone_id=0) and enforces a threshold-based quality gate.

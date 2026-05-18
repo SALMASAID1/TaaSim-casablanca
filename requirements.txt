@@ -13,3 +13,10 @@ s3fs==2024.6.1
 
 # fsspec
 # s3fs
+
+# Geospatial processing (for NYC-to-Casablanca projection)
+geopandas
+shapely
+folium
+matplotlib
+seaborn

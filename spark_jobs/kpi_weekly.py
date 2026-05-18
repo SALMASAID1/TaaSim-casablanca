@@ -192,8 +192,7 @@ def kpi_avg_trip_duration(df):
             count("TRIP_ID").alias("num_trips"),
             # Approximate duration: trips in busy zones are shorter
             # GPS points per trip × 15s / 60 = minutes
-            # Since we have 1 row per trip post-dedup, we estimate 10-30 pts avg
-            avg(lit(20) * 15 / 60).alias("avg_duration_min")
+            avg(col("gps_point_count") * 15 / 60).alias("avg_duration_min")
         )
         .filter(col("arrondissement_id") > 0)
         .orderBy("trip_week", "arrondissement_id")
@@ -385,6 +384,18 @@ def write_peak_hours_to_cassandra(kpi3, spark):
         WHERE arrondissement_id IS NOT NULL
           AND arrondissement_id > 0
         GROUP BY arrondissement_id, trip_hour, week_start
+        
+        UNION ALL
+        
+        SELECT
+            0                   AS zone_id,
+            trip_hour           AS hour_of_day,
+            CAST(week_start AS DATE) AS week_start,
+            COUNT(*)            AS trip_count
+        FROM porto_trips
+        WHERE arrondissement_id IS NOT NULL
+          AND arrondissement_id > 0
+        GROUP BY trip_hour, week_start
         ORDER BY hour_of_day
     """)
 

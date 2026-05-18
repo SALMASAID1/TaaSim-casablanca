@@ -189,7 +189,7 @@
       "id": 4,
       "title": "📊 Peak Hours — Trip Count by Hour of Day",
       "description": "Trip demand by hour (0-23). Sourced from Spark KPI → Cassandra kpi_peak_hours.",
-      "type": "table",
+      "type": "barchart",
       "gridPos": { "h": 12, "w": 12, "x": 12, "y": 12 },
       "datasource": { "type": "hadesarchitect-cassandra-datasource", "uid": "TaaSim-Cassandra" },
       "targets": [
@@ -198,7 +198,7 @@
           "datasource": { "type": "hadesarchitect-cassandra-datasource", "uid": "TaaSim-Cassandra" },
           "queryType": "query",
           "rawQuery": true,
-          "target": "SELECT hour_of_day, trip_count FROM taasim.kpi_peak_hours WHERE city='casablanca' ALLOW FILTERING"
+          "target": "SELECT hour_of_day, trip_count FROM taasim.kpi_peak_hours WHERE city='casablanca' AND zone_id=0 ALLOW FILTERING"
         }
       ],
       "fieldConfig": {
@@ -236,11 +236,10 @@
         ]
       },
       "options": {
-        "showHeader": true,
-        "sortBy": [
-          { "desc": true, "displayName": "Trip Count" }
-        ],
-        "cellHeight": "sm"
+        "orientation": "auto",
+        "showValue": "auto",
+        "xTickStep": 1,
+        "legend": { "displayMode": "list", "placement": "bottom" }
       }
     }
   ],
