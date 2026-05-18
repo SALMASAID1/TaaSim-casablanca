@@ -1,12 +1,12 @@
 apiVersion: 1
 
 datasources:
-  - name: Cassandra
+  - name: Cassandra-Legacy
     uid: cassandra
     type: hadesarchitect-cassandra-datasource
     access: proxy
     url: cassandra:9042
-    isDefault: true
+    isDefault: false
     jsonData:
       keyspace: taasim
       consistency: LOCAL_ONE
