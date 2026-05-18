@@ -28,9 +28,9 @@ class _BBox:
     lat_max: float
 
 
-# Capstone brief + Job1 validation bbox constants (keep aligned with docs).
+# Target bbox: union of metadata/zone_mapping.csv (maximizes zone join success and matches Notebook 03/etl_porto.py)
 _PORTO_BBOX = _BBox(lon_min=-8.7, lon_max=-8.5, lat_min=41.1, lat_max=41.2)
-_CASABLANCA_BBOX = _BBox(lon_min=-7.8, lon_max=-7.4, lat_min=33.4, lat_max=33.7)
+_CASABLANCA_BBOX = _BBox(lon_min=-7.730, lon_max=-7.480, lat_min=33.510, lat_max=33.645)
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -407,13 +407,19 @@ class VehicleGPSProducer:
             geom = edge.get("geometry")
             if geom is not None:
                 seg = list(geom.coords)
-                if reverse:
+                
+                # Proximity-based endpoint check (Notebook 03 v2.1 ADR-03 fix)
+                # geom[0] should be near node u; if it is near v instead, reverse.
+                ux, uy = float(G.nodes[u].get("x")), float(G.nodes[u].get("y"))
+                vx, vy = float(G.nodes[v].get("x")), float(G.nodes[v].get("y"))
+                PROX = 1e-4
+                
+                start_near_u = abs(seg[0][0] - ux) + abs(seg[0][1] - uy) < PROX
+                start_near_v = abs(seg[0][0] - vx) + abs(seg[0][1] - vy) < PROX
+                
+                if start_near_v and not start_near_u:
                     seg = list(reversed(seg))
-                else:
-                    ux, uy = G.nodes[u].get("x"), G.nodes[u].get("y")
-                    if ux is not None and uy is not None:
-                        if abs(seg[0][0] - ux) + abs(seg[0][1] - uy) > 0.0001:
-                            seg = list(reversed(seg))
+                
                 start = 0 if i == 0 else 1
                 coords.extend([(float(x), float(y)) for x, y in seg[start:]])
             else:
