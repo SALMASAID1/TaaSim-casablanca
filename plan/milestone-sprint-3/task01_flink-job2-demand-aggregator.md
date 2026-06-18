@@ -9,9 +9,7 @@ keying right is critical: a stream not keyed by `zone_id` before windowing will 
 aggregates, not per-zone.
 
 ## Objective
-Implement `flink_jobs/job2_demand_aggregator.py` that consumes `processed.gps` and `raw.trips`,
-computes per-zone supply/demand ratio in 30-second tumbling windows, and writes results to
-Cassandra `demand_zones` and Kafka `processed.demand`.
+Implement **Flink Job 2 (Demand Aggregator)** in Java under `com.taasim.flink.job2` following the detailed technical specification in [job2-demand-aggregator-spec.md](job2-demand-aggregator-spec.md). It consumes `processed.gps` and `raw.trips`, computes per-zone supply/demand ratio in 30-second tumbling windows, and writes results to Cassandra `demand_zones` and Kafka `processed.demand`.
 
 ## Acceptance Criteria
 - [ ] Job consumes both `processed.gps` and `raw.trips` with separate Kafka sources and

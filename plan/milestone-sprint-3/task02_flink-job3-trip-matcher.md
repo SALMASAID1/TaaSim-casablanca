@@ -8,9 +8,7 @@ found in 5 s), and an adjacent-zone fallback (expanded in task05). This job's ou
 investors see when a trip reservation triggers a match event on the demo dashboard.
 
 ## Objective
-Implement `flink_jobs/job3_trip_matcher.py` that matches incoming trip requests from `raw.trips`
-to available vehicles tracked via Flink keyed state, computes ETA, writes match records to
-Cassandra `trips`, and emits an `unmatched` event if no vehicle is found within 5 seconds.
+Implement **Flink Job 3 (Trip Matcher)** in Java under `com.taasim.flink.job3` following the detailed technical specification in [job3-trip-matcher-spec.md](job3-trip-matcher-spec.md). It matches incoming trip requests from `raw.trips` to available vehicles tracked via Flink keyed broadcast state, computes ETA, writes match records to Cassandra `trips`, and emits an `unmatched` event if no vehicle is found within 5 seconds.
 
 ## Acceptance Criteria
 - [ ] Job consumes `raw.trips` with consumer group `flink-job3-trips`

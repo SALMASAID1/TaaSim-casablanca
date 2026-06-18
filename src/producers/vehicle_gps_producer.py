@@ -1,5 +1,4 @@
 import argparse
-import csv
 import heapq
 import json
 import logging
@@ -28,17 +27,12 @@ class _BBox:
     lat_max: float
 
 
-# Target bbox: union of metadata/zone_mapping.csv (maximizes zone join success and matches Notebook 03/etl_porto.py)
-_PORTO_BBOX = _BBox(lon_min=-8.7, lon_max=-8.5, lat_min=41.1, lat_max=41.2)
+# Target bbox: union of metadata/zone_mapping.csv (maximizes zone join success)
 _CASABLANCA_BBOX = _BBox(lon_min=-7.730, lon_max=-7.480, lat_min=33.510, lat_max=33.645)
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return lo if value < lo else hi if value > hi else value
-
-
-def _clamp01(value: float) -> float:
-    return _clamp(value, 0.0, 1.0)
 
 
 def _clamp_lon_lat_to_bbox(lon: float, lat: float, bbox: _BBox) -> Tuple[float, float]:
@@ -48,26 +42,17 @@ def _clamp_lon_lat_to_bbox(lon: float, lat: float, bbox: _BBox) -> Tuple[float, 
     )
 
 
-def _affine_bbox_map(lon: float, lat: float, src: _BBox, dst: _BBox) -> Tuple[float, float]:
-    """Relative-position affine map with clamping to [0,1] (Notebook 03 ADR-01).
+def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    """Great-circle distance in km."""
+    r = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
 
-    A point at 30% across the source bbox maps to 30% across the destination bbox.
-    """
-
-    lon_den = src.lon_max - src.lon_min
-    lat_den = src.lat_max - src.lat_min
-    if lon_den == 0.0 or lat_den == 0.0:
-        # Defensive fallback; should never happen for our fixed bboxes.
-        return dst.lon_min, dst.lat_min
-
-    rel_lon = (lon - src.lon_min) / lon_den
-    rel_lat = (lat - src.lat_min) / lat_den
-    rel_lon = _clamp01(rel_lon)
-    rel_lat = _clamp01(rel_lat)
-
-    mapped_lon = dst.lon_min + rel_lon * (dst.lon_max - dst.lon_min)
-    mapped_lat = dst.lat_min + rel_lat * (dst.lat_max - dst.lat_min)
-    return mapped_lon, mapped_lat
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return r * c
 
 
 def _polyline_length_km(points: List[Tuple[float, float]]) -> float:
@@ -147,14 +132,6 @@ def _repo_root() -> Path:
 def _resolve_data_path(path: str) -> str:
     """Resolve a local relative path.
 
-    The docs/.env assume repo-relative paths (e.g., raw/porto-trips/train.csv).
-    When running from a subfolder (VS Code "Run Python File" often uses the
-    file's directory as CWD), those paths break.
-
-    Resolution order:
-    1) As provided (relative to current working directory)
-    2) Relative to repository root
-
     S3 paths are returned unchanged.
     """
 
@@ -184,29 +161,6 @@ def _resolve_data_path(path: str) -> str:
 def _unix_to_iso8601(ts: int) -> str:
     # ISO-8601 (UTC) — friendly for Flink timestamp assigners.
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _porto_to_casablanca(lon: float, lat: float) -> Tuple[float, float]:
-    """Linear bbox mapping (Task 04) Porto -> Casablanca, with relative-position clamping.
-
-    This matches Notebook 03's ADR-01 behaviour (clamp rel coords to [0,1]) while
-    keeping the capstone brief's fixed bboxes.
-    """
-
-    return _affine_bbox_map(lon, lat, _PORTO_BBOX, _CASABLANCA_BBOX)
-
-
-def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-    """Great-circle distance in km."""
-    r = 6371.0
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    d_phi = math.radians(lat2 - lat1)
-    d_lambda = math.radians(lon2 - lon1)
-
-    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return r * c
 
 
 class _DelayedKafkaSender:
@@ -264,16 +218,11 @@ class _Trip:
     trip_id: str
     taxi_id: str
     base_ts: int
-    polyline: List[Tuple[float, float]]  # list of (porto_lon, porto_lat)
+    polyline: List[Tuple[float, float]]  # pre-mapped (lon, lat) in Casablanca BBox
 
 
 class VehicleGPSProducer:
-    """Replays taxi GPS events into Kafka (topic raw.gps).
-
-    Supports two input formats:
-    - Porto raw CSV (train.csv) with POLYLINE of [lon,lat] points.
-    - Pre-exploded parquet with columns: TIMESTAMP, TAXI_ID, cas_lat, cas_lon (optional TRIP_ID).
-    """
+    """Replays pre-mapped Casablanca taxi GPS events from MinIO Parquet files into Kafka."""
 
     def __init__(
         self,
@@ -288,12 +237,10 @@ class VehicleGPSProducer:
         blackout_delay_max_s: float = 180.0,
         max_trips: int = 200,
         loop: bool = True,
-        mapping_mode: str = "affine",
         clamp_bbox: bool = True,
-        casa_place: str = "Casablanca, Morocco",
-        casa_graphml: str = "/tmp/casablanca_drive.graphml",
         parquet_avg_speed_kmh: float = 25.0,
         parquet_max_pings: int = 400,
+        **kwargs,  # Gracefully ignore deprecated/obsolete kwargs (like mapping_mode, casa_place, casa_graphml)
     ):
         if speed <= 0:
             raise ValueError("speed must be > 0")
@@ -318,192 +265,15 @@ class VehicleGPSProducer:
         self.blackout_delay_max_s = blackout_delay_max_s
         self.max_trips = max_trips
         self.loop = loop
-
-        self.mapping_mode = mapping_mode
         self.clamp_bbox = clamp_bbox
-        self.casa_place = casa_place
-        self.casa_graphml = casa_graphml
         self.parquet_avg_speed_kmh = parquet_avg_speed_kmh
         self.parquet_max_pings = parquet_max_pings
 
-        self._road_ready = False
-        self._ox = None
-        self._nx = None
-        self._G_casa = None
-        self._G_undir = None
+        if kwargs:
+            logger.info("Gracefully ignored deprecated parameters: %s", list(kwargs.keys()))
 
         self.producer = self._create_producer()
         self._delayed_sender = _DelayedKafkaSender(self.producer, self.topic)
-
-    def _init_road_graph(self) -> None:
-        if self._road_ready:
-            return
-
-        try:
-            import networkx as nx  # type: ignore
-            import osmnx as ox  # type: ignore
-        except ImportError as exc:
-            raise RuntimeError(
-                "Road map-matching mode requires optional deps. Install: pip install osmnx networkx"
-            ) from exc
-
-        ox.settings.log_console = False
-        ox.settings.use_cache = True
-
-        cache_path = Path(self.casa_graphml)
-        if cache_path.exists():
-            G = ox.load_graphml(cache_path)
-            logger.info(
-                "Loaded cached Casablanca road graph: %s (%d nodes, %d edges)",
-                cache_path,
-                G.number_of_nodes(),
-                G.number_of_edges(),
-            )
-        else:
-            logger.warning("Casablanca road graph cache not found; downloading via OSMnx: %s", self.casa_place)
-            G = ox.graph_from_place(self.casa_place, network_type="drive", simplify=True)
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            ox.save_graphml(G, cache_path)
-            logger.info(
-                "Saved Casablanca road graph cache: %s (%d nodes, %d edges)",
-                cache_path,
-                G.number_of_nodes(),
-                G.number_of_edges(),
-            )
-
-        self._ox = ox
-        self._nx = nx
-        self._G_casa = G
-        self._G_undir = G.to_undirected()
-        self._road_ready = True
-
-    def _extract_route_geometry(self, route: List[int]) -> List[Tuple[float, float]]:
-        """Extract full edge geometry for a route (Notebook 03 ADR-03)."""
-
-        if not route or len(route) < 2:
-            return []
-        if self._G_casa is None:
-            return []
-
-        G = self._G_casa
-        coords: List[Tuple[float, float]] = []
-        for i in range(len(route) - 1):
-            u, v = route[i], route[i + 1]
-
-            edge_data = G.get_edge_data(u, v)
-            reverse = False
-            if edge_data is None:
-                edge_data = G.get_edge_data(v, u)
-                reverse = True
-
-            if edge_data is None:
-                if i == 0:
-                    coords.append((float(G.nodes[u].get("x")), float(G.nodes[u].get("y"))))
-                coords.append((float(G.nodes[v].get("x")), float(G.nodes[v].get("y"))))
-                continue
-
-            key = next(iter(edge_data.keys()))
-            edge = edge_data[key]
-            geom = edge.get("geometry")
-            if geom is not None:
-                seg = list(geom.coords)
-                
-                # Proximity-based endpoint check (Notebook 03 v2.1 ADR-03 fix)
-                # geom[0] should be near node u; if it is near v instead, reverse.
-                ux, uy = float(G.nodes[u].get("x")), float(G.nodes[u].get("y"))
-                vx, vy = float(G.nodes[v].get("x")), float(G.nodes[v].get("y"))
-                PROX = 1e-4
-                
-                start_near_u = abs(seg[0][0] - ux) + abs(seg[0][1] - uy) < PROX
-                start_near_v = abs(seg[0][0] - vx) + abs(seg[0][1] - vy) < PROX
-                
-                if start_near_v and not start_near_u:
-                    seg = list(reversed(seg))
-                
-                start = 0 if i == 0 else 1
-                coords.extend([(float(x), float(y)) for x, y in seg[start:]])
-            else:
-                if i == 0:
-                    coords.append((float(G.nodes[u].get("x")), float(G.nodes[u].get("y"))))
-                coords.append((float(G.nodes[v].get("x")), float(G.nodes[v].get("y"))))
-
-        return coords
-
-    def _map_porto_trip_to_casa_road(self, porto_polyline: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
-        """Map one Porto trip into Casablanca with road matching (Notebook 03 §4)."""
-
-        if not porto_polyline or len(porto_polyline) < 2:
-            return []
-
-        # Desired ping count: preserve original 15s sampling density.
-        target_pings = max(2, len(porto_polyline))
-
-        start_lon, start_lat = porto_polyline[0]
-        end_lon, end_lat = porto_polyline[-1]
-
-        # Notebook 03 filter: skip round trips (≈100m). Here: fall back to affine-per-point.
-        if abs(start_lon - end_lon) < 0.001 and abs(start_lat - end_lat) < 0.001:
-            mapped = [_porto_to_casablanca(lon, lat) for lon, lat in porto_polyline]
-            if self.clamp_bbox:
-                mapped = [
-                    _clamp_lon_lat_to_bbox(lon, lat, _CASABLANCA_BBOX)
-                    for lon, lat in mapped
-                ]
-            return mapped
-
-        try:
-            self._init_road_graph()
-        except Exception as exc:
-            logger.warning("Road graph init failed; falling back to affine mapping (%s)", exc)
-            mapped = [_porto_to_casablanca(lon, lat) for lon, lat in porto_polyline]
-            if self.clamp_bbox:
-                mapped = [
-                    _clamp_lon_lat_to_bbox(lon, lat, _CASABLANCA_BBOX)
-                    for lon, lat in mapped
-                ]
-            return mapped
-
-        if self._G_casa is None or self._G_undir is None or self._ox is None or self._nx is None:
-            return []
-
-        # Transform O/D to Casablanca bbox.
-        casa_start_lon, casa_start_lat = _porto_to_casablanca(start_lon, start_lat)
-        casa_end_lon, casa_end_lat = _porto_to_casablanca(end_lon, end_lat)
-        if self.clamp_bbox:
-            casa_start_lon, casa_start_lat = _clamp_lon_lat_to_bbox(
-                casa_start_lon, casa_start_lat, _CASABLANCA_BBOX
-            )
-            casa_end_lon, casa_end_lat = _clamp_lon_lat_to_bbox(
-                casa_end_lon, casa_end_lat, _CASABLANCA_BBOX
-            )
-
-        try:
-            origin = self._ox.distance.nearest_nodes(self._G_casa, X=casa_start_lon, Y=casa_start_lat)
-            dest = self._ox.distance.nearest_nodes(self._G_casa, X=casa_end_lon, Y=casa_end_lat)
-            if origin == dest:
-                raise ValueError("origin==dest after snapping")
-
-            route = self._nx.shortest_path(self._G_undir, origin, dest, weight="length")
-            coords = self._extract_route_geometry(route)
-            if len(coords) < 2:
-                raise ValueError("degenerate route geometry")
-
-            resampled = _resample_polyline(coords, target_pings)
-            if self.clamp_bbox:
-                resampled = [
-                    _clamp_lon_lat_to_bbox(lon, lat, _CASABLANCA_BBOX)
-                    for lon, lat in resampled
-                ]
-            return resampled
-        except Exception as exc:
-            logger.warning("Road map-matching failed; falling back to affine mapping (%s)", exc)
-            mapped = [_porto_to_casablanca(lon, lat) for lon, lat in porto_polyline]
-            if self.clamp_bbox:
-                mapped = [
-                    _clamp_lon_lat_to_bbox(lon, lat, _CASABLANCA_BBOX)
-                    for lon, lat in mapped
-                ]
-            return mapped
 
     def _create_producer(self) -> KafkaProducer:
         try:
@@ -556,119 +326,8 @@ class VehicleGPSProducer:
         else:
             self.producer.send(self.topic, key=taxi_id, value=payload)
 
-    def _load_porto_trips(self, path: str) -> List[_Trip]:
-        storage_options: Optional[Dict[str, object]] = None
-        open_path = path
-
-        if open_path.startswith("s3a://"):
-            open_path = "s3://" + open_path[len("s3a://") :]
-        if open_path.startswith("s3://"):
-            storage_options = self._minio_storage_options()
-
-        def _open_file() -> Iterable[str]:
-            if open_path.startswith("s3://"):
-                import fsspec
-
-                with fsspec.open(open_path, mode="rt", encoding="utf-8", newline="", **storage_options) as f:
-                    yield from f
-            else:
-                with open(open_path, mode="rt", encoding="utf-8", newline="") as f:
-                    yield from f
-
-        trips: List[_Trip] = []
-        reader = csv.DictReader(_open_file())
-        for row in reader:
-            if len(trips) >= self.max_trips:
-                break
-
-            if str(row.get("MISSING_DATA", "")).strip().lower() == "true":
-                continue
-
-            polyline_raw = row.get("POLYLINE")
-            if not polyline_raw:
-                continue
-
-            try:
-                coords = json.loads(polyline_raw)
-            except Exception:
-                continue
-
-            if not coords:
-                continue
-
-            try:
-                base_ts = int(row["TIMESTAMP"])
-            except Exception:
-                continue
-
-            polyline: List[Tuple[float, float]] = []
-            for p in coords:
-                if not isinstance(p, list) or len(p) != 2:
-                    continue
-                try:
-                    polyline.append((float(p[0]), float(p[1])))
-                except Exception:
-                    continue
-
-            if not polyline:
-                continue
-
-            trips.append(
-                _Trip(
-                    trip_id=str(row.get("TRIP_ID", "")),
-                    taxi_id=str(row.get("TAXI_ID", "")),
-                    base_ts=base_ts,
-                    polyline=polyline,
-                )
-            )
-
-        if not trips:
-            raise ValueError(f"No valid trips found in {path}")
-
-        return trips
-
-    def _stream_from_porto_csv(self) -> None:
-        logger.info("Loading Porto CSV trips from %s...", self.data_path)
-        trips = self._load_porto_trips(self.data_path)
-
-        mode = (self.mapping_mode or "affine").strip().lower()
-        if mode not in {"affine", "road"}:
-            raise ValueError("mapping_mode must be 'affine' or 'road'")
-
-        if mode == "road":
-            logger.warning(
-                "Mapping mode=road enabled: computing Casablanca road-matched routes (may be slow)."
-            )
-
-            # Best-effort: if deps/graph init aren't available, degrade to affine.
-            try:
-                self._init_road_graph()
-            except Exception as exc:
-                logger.warning("Road mode unavailable; falling back to affine mapping (%s)", exc)
-                self._replay_trips(trips, is_map_matched=False)
-                return
-
-            mapped_trips: List[_Trip] = []
-            for t in trips:
-                mapped_polyline = self._map_porto_trip_to_casa_road(t.polyline)
-                if len(mapped_polyline) < 2:
-                    continue
-                mapped_trips.append(
-                    _Trip(
-                        trip_id=t.trip_id,
-                        taxi_id=t.taxi_id,
-                        base_ts=t.base_ts,
-                        polyline=mapped_polyline,
-                    )
-                )
-            if not mapped_trips:
-                raise ValueError("Road map-matching produced no valid trips")
-            self._replay_trips(mapped_trips, is_map_matched=True)
-        else:
-            self._replay_trips(trips, is_map_matched=False)
-
     def _stream_from_parquet(self) -> None:
-        logger.info("Loading parquet from %s...", self.data_path)
+        logger.info("Loading Parquet from %s...", self.data_path)
         path = self.data_path
         storage_options: Optional[Dict[str, object]] = None
 
@@ -713,7 +372,7 @@ class VehicleGPSProducer:
         for row in df.itertuples(index=False):
             if len(trips) >= self.max_trips:
                 break
-            
+
             try:
                 poly_val = getattr(row, "polyline")
                 if poly_val is None:
@@ -748,8 +407,6 @@ class VehicleGPSProducer:
                 if len(raw_polyline) < 2:
                     continue
 
-                # The curated dataset stores a dense road-geometry polyline.
-                # Convert it into a realistic 15s ping series.
                 duration_sec = _as_positive_float(getattr(row, "duration_sec", None))
                 distance_km = _as_positive_float(getattr(row, "distance_km", None))
 
@@ -786,9 +443,9 @@ class VehicleGPSProducer:
         if not trips:
             raise ValueError(f"No valid trips found in {path}")
 
-        self._replay_trips(trips, is_map_matched=True)
+        self._replay_trips(trips)
 
-    def _replay_trips(self, trips: List[_Trip], is_map_matched: bool) -> None:
+    def _replay_trips(self, trips: List[_Trip]) -> None:
         logger.info("Loaded %d trips; building event heap for %sx speed replay...", len(trips), self.speed)
 
         min_event_ts = min(t.base_ts for t in trips)
@@ -813,28 +470,19 @@ class VehicleGPSProducer:
 
                     trip = trips[trip_idx]
                     lon, lat = trip.polyline[point_idx]
-                    
-                    if is_map_matched:
-                        cas_lon, cas_lat = lon, lat
-                    else:
-                        cas_lon, cas_lat = _porto_to_casablanca(lon, lat)
+                    cas_lon, cas_lat = lon, lat
 
                     # Speed within trip (15s per ping).
                     speed_kmh = 0.0
                     if point_idx > 0:
                         prev_lon, prev_lat = trip.polyline[point_idx - 1]
-                        if is_map_matched:
-                            prev_cas_lon, prev_cas_lat = prev_lon, prev_lat
-                        else:
-                            prev_cas_lon, prev_cas_lat = _porto_to_casablanca(prev_lon, prev_lat)
+                        prev_cas_lon, prev_cas_lat = prev_lon, prev_lat
                         dist_km = _haversine_km(prev_cas_lon, prev_cas_lat, cas_lon, cas_lat)
                         speed_kmh = float((dist_km / 15.0) * 3600.0) if dist_km > 0 else 0.0
 
                     noisy_lat, noisy_lon = self._apply_gaussian_noise(cas_lat, cas_lon)
 
-                    # For a live dashboard to work seamlessly with accelerated replay, 
-                    # the emitted timestamp should match the current wall-clock time.
-                    # sim_start + (event_ts - min_event_ts) / self.speed perfectly tracks the sleep loop.
+                    # Rebase event time to wall clock
                     rebased_ts = sim_start + (event_ts - min_event_ts) / self.speed
                     payload = {
                         "taxi_id": trip.taxi_id,
@@ -871,11 +519,11 @@ class VehicleGPSProducer:
     def start(self) -> None:
         try:
             if self.data_path.lower().endswith(".csv"):
-                self._stream_from_porto_csv()
-            else:
-                if (self.mapping_mode or "").strip().lower() == "road":
-                    logger.warning("mapping_mode=road ignored for parquet input; using parquet polyline replay")
-                self._stream_from_parquet()
+                raise ValueError(
+                    "Porto raw CSV format is no longer supported in this optimized version. "
+                    "Please use the pre-mapped MinIO Parquet trajectories."
+                )
+            self._stream_from_parquet()
         finally:
             self.stop()
 
@@ -895,9 +543,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--topic", default=os.environ.get("TAASIM_KAFKA_TOPIC", "raw.gps"))
     p.add_argument(
         "--data-path",
-        # default=os.environ.get("TAASIM_DATA_PATH", "raw/porto-trips/train.csv"),
-        default=os.environ.get("TAASIM_DATA_PATH", "s3://taasim/raw/porto-trips/train.csv"),
-        help="Either Porto train.csv (local or s3a://...) or curated parquet directory (s3a://...).",
+        default=os.environ.get("TAASIM_DATA_PATH", "s3://taasim/curated/mapped_casa_trips/"),
+        help="S3 parquet directory (s3a://...) containing pre-mapped Casablanca trajectories.",
     )
     p.add_argument("--speed", type=float, default=float(os.environ.get("TAASIM_SPEED", "10.0")))
     p.add_argument(
@@ -926,22 +573,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--max-trips", type=int, default=int(os.environ.get("TAASIM_MAX_TRIPS", "200")))
     p.add_argument(
-        "--mapping-mode",
-        default=os.environ.get("TAASIM_MAPPING_MODE", "affine"),
-        choices=["affine", "road"],
-        help="CSV input only: 'affine' (default) or 'road' (OSM map-matching).",
-    )
-    p.add_argument(
-        "--casa-place",
-        default=os.environ.get("TAASIM_CASA_PLACE", "Casablanca, Morocco"),
-        help="OSMnx place string used when downloading the Casablanca road graph (road mode).",
-    )
-    p.add_argument(
-        "--casa-graphml",
-        default=os.environ.get("TAASIM_CASA_GRAPHML", "/tmp/casablanca_drive.graphml"),
-        help="GraphML cache path for Casablanca road graph (road mode).",
-    )
-    p.add_argument(
         "--parquet-avg-speed-kmh",
         type=float,
         default=float(os.environ.get("TAASIM_PARQUET_AVG_SPEED_KMH", "25.0")),
@@ -963,20 +594,26 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--no-clamp-bbox",
         dest="clamp_bbox",
         action="store_false",
-        help="Do not clamp emitted coordinates; may increase downstream invalid_bbox drops.",
+        help="Do not clamp emitted coordinates.",
     )
     p.set_defaults(clamp_bbox=True)
     p.add_argument(
         "--once",
         action="store_true",
-        help="Run one pass through the input data then exit (CSV mode only).",
+        help="Run one pass through the input data then exit.",
     )
+
+    # Obsolete kwargs fallbacks to avoid breaking legacy shell execution scripts
+    p.add_argument("--mapping-mode", default="road", help="Deprecated/Ignored")
+    p.add_argument("--casa-place", default="Casablanca, Morocco", help="Deprecated/Ignored")
+    p.add_argument("--casa-graphml", default="/tmp/casablanca_drive.graphml", help="Deprecated/Ignored")
+
     return p
 
 
 if __name__ == "__main__":
     args = _build_arg_parser().parse_args()
-    logger.warning("the building args are : %s" , args)
+    logger.info("Initializing GPS Producer with args: %s", args)
     producer_service = VehicleGPSProducer(
         broker=args.broker,
         topic=args.topic,
@@ -988,12 +625,12 @@ if __name__ == "__main__":
         blackout_delay_max_s=args.blackout_delay_max_s,
         max_trips=args.max_trips,
         loop=not args.once,
-        mapping_mode=args.mapping_mode,
         clamp_bbox=args.clamp_bbox,
-        casa_place=args.casa_place,
-        casa_graphml=args.casa_graphml,
         parquet_avg_speed_kmh=args.parquet_avg_speed_kmh,
         parquet_max_pings=args.parquet_max_pings,
+        # Deprecated kwargs are consumed by **kwargs in init
+        mapping_mode=args.mapping_mode,
+        casa_place=args.casa_place,
+        casa_graphml=args.casa_graphml,
     )
     producer_service.start()
-
