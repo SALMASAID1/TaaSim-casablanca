@@ -85,4 +85,3 @@ osrm_data/**
 !raw/**/*.r
 !raw/**/*.py
 !raw/**/*.sh
-NYC_TLC_Version_douae.ipynb
