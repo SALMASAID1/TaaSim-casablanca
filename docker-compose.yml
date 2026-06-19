@@ -518,12 +518,14 @@ services:
     ports:
       - "8000:8000"
     environment:
+      <<: *s3a-env
       CASSANDRA_HOST: cassandra
       CASSANDRA_PORT: "9042"
       CASSANDRA_KEYSPACE: taasim
       KAFKA_BROKER: kafka:29092
       KAFKA_TRIPS_TOPIC: raw.trips
       JWT_SECRET: ${JWT_SECRET:-taasim-dev-jwt-secret}
+      PYSPARK_SUBMIT_ARGS: "--jars /opt/extra-jars/hadoop-aws-3.3.4.jar,/opt/extra-jars/aws-java-sdk-bundle-1.12.262.jar pyspark-shell"
     depends_on:
       cassandra:
         condition: service_healthy
@@ -533,6 +535,10 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      s3a-jars:
+        condition: service_completed_successfully
+    volumes:
+      - s3a_jars:/opt/extra-jars:ro
     healthcheck:
       test: [ "CMD-SHELL", "curl -sf http://localhost:8000/ > /dev/null" ]
       interval: 15s

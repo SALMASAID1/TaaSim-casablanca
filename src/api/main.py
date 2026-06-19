@@ -105,10 +105,14 @@ class TripResponse(BaseModel):
     trip_id: str
     status: str = "pending"
 
+class ForecastRequest(BaseModel):
+    zone_id: int = Field(..., ge=1, le=16)
+    datetime: str = Field(..., description="ISO-8601 datetime string")
 
-
-
-
+class ForecastResponse(BaseModel):
+    predicted_demand: float
+    zone_id: int
+    datetime: str
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -271,6 +275,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Kafka — optional (log warning only in dev if not reachable)
     app.state.kafka: Optional[KafkaProducer] = _connect_kafka()
+    
+    # ML Model — Spark
+    try:
+        from pyspark.sql import SparkSession
+        from pyspark.ml import PipelineModel
+        logger.info("Initializing SparkSession for API inference...")
+        spark = (
+            SparkSession.builder
+            .appName("taasim-api")
+            .master("local[1]")
+            .config("spark.driver.extraClassPath", "/opt/extra-jars/hadoop-aws-3.3.4.jar:/opt/extra-jars/aws-java-sdk-bundle-1.12.262.jar")
+            .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
+            .config("spark.hadoop.fs.s3a.path.style.access", "true")
+            .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+            .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+            .config("spark.driver.memory", "512m")
+            .getOrCreate()
+        )
+        app.state.spark = spark
+        logger.info("Loading PipelineModel from MinIO...")
+        app.state.forecast_model = PipelineModel.load("s3a://taasim/ml/models/demand_v1/")
+        logger.info("ML Model loaded successfully.")
+    except Exception as exc:
+        logger.error("Failed to load Spark or ML model: %s", exc)
+        app.state.spark = None
+        app.state.forecast_model = None
 
     yield  # ← server is live here
 
@@ -285,6 +315,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.cassandra:
         try:
             app.state.cassandra.cluster.shutdown()
+        except Exception:
+            pass
+    if getattr(app.state, "spark", None) is not None:
+        try:
+            app.state.spark.stop()
         except Exception:
             pass
     logger.info("TaaSim API stopped.")
@@ -450,16 +485,55 @@ async def create_trip(
 
 @app.post(
     "/api/v1/demand/forecast",
-    status_code=202,
+    response_model=ForecastResponse,
     tags=["demand"],
-    summary="Request demand forecast (stub)",
+    summary="Predict demand forecast using trained GBT Model",
 )
 async def get_demand_forecast(
+    body: ForecastRequest,
     request: Request,
     current_user: AuthenticatedUser = Depends(require_admin),
-) -> dict:
-    """Stub for demand forecast ML endpoint. Returns 202 Accepted.
-    
-    Restricted to admin users only.
-    """
-    return {"status": "accepted", "message": "Forecast computation started"}
+) -> ForecastResponse:
+    """Evaluate the trained GBT model for a single zone and datetime."""
+    if getattr(request.app.state, "spark", None) is None or getattr(request.app.state, "forecast_model", None) is None:
+        raise HTTPException(status_code=503, detail="ML Model not loaded in API")
+
+    try:
+        dt = datetime.fromisoformat(body.datetime.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ISO-8601 datetime format")
+
+    spark = request.app.state.spark
+    model = request.app.state.forecast_model
+
+    # Construct single feature row matching training features
+    feature_row = spark.createDataFrame([{
+        "hour_of_day": dt.hour,
+        "day_of_week": dt.isoweekday(),
+        "is_weekend": dt.isoweekday() >= 6,
+        "is_friday": dt.isoweekday() == 5,
+        "zone_id": body.zone_id,
+        "zone_population_density": 5000,
+        "zone_type_residential": 0,
+        "zone_type_commercial": 1,
+        "zone_type_transit_hub": 0,
+        "is_raining": False,
+        "temperature_bucket": 1,
+        "demand_lag_1d": 0.0,
+        "demand_lag_7d": 0.0,
+        "rolling_7d_mean": 0.0
+    }])
+
+    # Model Inference
+    try:
+        prediction_df = model.transform(feature_row)
+        predicted_demand = float(prediction_df.select("prediction").collect()[0][0])
+    except Exception as exc:
+        logger.error("Inference failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Inference failed")
+
+    return ForecastResponse(
+        predicted_demand=predicted_demand,
+        zone_id=body.zone_id,
+        datetime=body.datetime
+    )

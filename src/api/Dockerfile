@@ -14,7 +14,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
-        libev4
+        libev4 \
+        default-jre-headless \
+        procps
 
 WORKDIR /app
 
