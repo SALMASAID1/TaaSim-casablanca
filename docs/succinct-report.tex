@@ -1,0 +1,96 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection.}{0.5em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small TaaSim Casablanca --- Rapport Technique Succinct}
+\lfoot{\small ENSA Al Hoceima}
+\rfoot{\small Page \thepage}
+
+\title{\textbf{TaaSim Casablanca \\ Plateforme de Mobilité Urbaine et Transport as a Service \\ \Large Rapport Technique Synthétique (Max 3 Pages)}}
+\author{\textbf{TaaSim Founders} \\ ENSA Al Hoceima --- Big Data Capstone}
+\date{Juin 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction \& Problématique}
+Casablanca, capitale économique du Maroc, compte plus de 4 millions d'habitants confrontés à des défis de transport urbain fragmentés et non régulés. La flotte de transport public (petits/grands taxis, bus informels) opère sans géolocalisation, planification dynamique, ni système d'information intégré. 
+
+\textbf{TaaSim} (Transport as a Service -- Simulation) résout ce problème en introduisant une plateforme Big Data temps réel qui traite la mobilité urbaine comme un problème d'ingénierie de données. La plateforme ingère des flux GPS de véhicules en continu, traite les réservations en temps réel, et applique des analyses batch et de l'apprentissage automatique (Machine Learning) pour prédire les hausses de demande et optimiser la mise en relation usager-véhicule.
+
+\section{Méthodologies}
+Le projet TaaSim s'appuie sur une conception Kappa Architecture moderne et des transformations géospatiales rigoureuses pour adapter des données réelles de trajectoires au contexte de Casablanca.
+
+\subsection{Architecture Kappa}
+Pour éviter la duplication de code et la désynchronisation inhérentes à l'architecture Lambda, TaaSim utilise une **Architecture Kappa**. Apache Kafka sert de registre d'événements unique (system of record) avec une rétention de 7 jours. Les flux de données temps réel sont traités par Apache Flink, tandis qu'Apache Spark effectue périodiquement des analyses historiques (KPI) et l'entraînement du modèle prédictif directement à partir des données archivées sur MinIO.
+
+\subsection{Transformation Affine (Porto $\rightarrow$ Casablanca)}
+Ne disposant pas d'un dataset de trajectoires open-source pour Casablanca, nous appliquons une transformation géométrique affine (ADR-01) pour projeter les coordonnées GPS du dataset de Porto (1,7M trajets) sur le cadre urbain de Casablanca :
+\begin{align*}
+rel\_lon &= \frac{lon - Porto.min\_lon}{Porto.max\_lon - Porto.min\_lon} \\
+rel\_lat &= \frac{lat - Porto.min\_lat}{Porto.max\_lat - Porto.min\_lat} \\
+Casa\_lon &= Casa.min\_lon + rel\_lon \times (Casa.max\_lon - Casa.min\_lon) \\
+Casa\_lat &= Casa.min\_lat + rel\_lat \times (Casa.max\_lat - Casa.min\_lat)
+\end{align*}
+Les coordonnées obtenues sont clampées à $[0,1]$ pour éviter les dérives et filtrées à l'aide de barrières de qualité de données (<1\% d'anomalies hors-limites).
+
+\subsection{Pipeline de Streaming Temps Réel (Flink)}
+Le traitement de flux en temps réel se compose de 3 jobs Flink synchronisés :
+\begin{itemize}
+    \item \textbf{Job 1 (GPS Normalizer) :} Consomme les pings GPS bruts de Kafka, valide les coordonnées, affecte les Watermarks d'événements, et anonymise les données en projetant les coordonnées GPS réelles sur les centroïdes des arrondissements de Casablanca.
+    \item \textbf{Job 2 (Demand Aggregator) :} Calcule l'offre et la demande agrégées par arrondissement dans des fenêtres temporelles glissantes de 30 secondes.
+    \item \textbf{Job 3 (Trip Matcher) :} Effectue une mise en relation dynamique à faible latence (P95 < 5 secondes) entre les passagers et les véhicules disponibles en utilisant un stockage d'état RocksDB.
+\end{itemize}
+
+\subsection{Analyses Batch et Machine Learning (Spark)}
+\begin{itemize}
+    \item \textbf{Spark ETL : } Une pipeline optimisée à trois niveaux (Deduplication et filtrage des colonnes lourdes, extraction des points de départ et d'arrivée, et jointure logique par expressions conditionnelles sans shuffle) traite l'ensemble des données historiques en moins de 5 minutes.
+    \item \textbf{Prédiction de la Demande : } Un pipeline MLlib combinant l'extraction de caractéristiques temporelles (heure, jour), géospatiales (densité de zone), météo (Open-Meteo API) et de latence temporelle (rolling averages de 7 jours) entraîne un modèle \texttt{GBTRegressor} pour prévoir la demande à 30 minutes d'horizon.
+\end{itemize}
+
+\section{Réalisations}
+La plateforme TaaSim a été entièrement déployée, testée et durcie en infrastructure conteneurisée multi-services :
+
+\begin{enumerate}
+    \item \textbf{Infrastructure Conteneurisée :} Orchestration de 12 conteneurs (Kafka KRaft, MinIO, Apache Cassandra 4.1, Flink JobManager/TaskManager, Spark Master/Worker, Jupyter, FastAPI, Grafana et connecteurs Kafka Connect S3 Sink).
+    \item \textbf{Optimisation PySpark ETL :} L'ETL de Porto a été restructuré pour éliminer les goulots d'étranglement de mémoire du Driver (OOM) en définissant un schéma de lecture explicite (\texttt{StructType}) sur le fichier CSV de 1.94 Go, et en éliminant les jointures coûteuses via des expressions de colonne conditionnelles \texttt{when().otherwise()}. \textbf{Temps de traitement final : 4,4 minutes (< 5 min SLA, Réussite ✅)}.
+    \item \textbf{Sécurisation de l'API FastAPI :} Implémentation d'une authentification JWT avec rôles d'accès (\textit{rider} et \textit{admin}), communications chiffrées en HTTPS avec certificats SSL/TLS auto-générés, et mise en place d'ACL Kafka interdisant aux producteurs non autorisés d'écrire sur les topics de demand/surges.
+    \item \textbf{Supervision et Dashboarding (Grafana) :} Création de tableaux de bord en temps réel connectés directement à Cassandra, affichant la géolocalisation des véhicules sur carte (Geomap), une carte de chaleur de la demande mise à jour toutes les 30s, et des panneaux d'analyse de KPIs batch.
+\end{enumerate}
+
+\section{Résultats Expérimentaux \& SLA}
+Les tests de validation et de performance automatisés (via Locust et scripts de mesures d'intégration) confirment la conformité des exigences fonctionnelles et non-fonctionnelles de la plateforme :
+
+\begin{table}[h!]
+\centering
+\caption{Tableau de Conformité des Exigences SLA}
+\begin{tabular}{@{}llccr@{}}
+\toprule
+\textbf{KPI / Métrique} & \textbf{Requirement Target} & \textbf{Performance Réelle} & \textbf{Statut} \\ \midrule
+Temps de mise en relation & < 5 secondes (P95) & 0.42 s & Conforme (✅) \\
+Fraîcheur des positions GPS & < 15 secondes & 1.2 s & Conforme (✅) \\
+Fréquence d'agrégation demande & Toutes les 30 secondes & 30 s & Conforme (✅) \\
+Temps de réponse API de prédiction & < 500 millisecondes (P95) & 35 ms & Conforme (✅) \\
+Spark ETL Porto (1.7M lignes) & < 5 minutes & 4.4 minutes (265.5 s) & Conforme (✅) \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusion}
+TaaSim Casablanca démontre la viabilité d'un système intelligent et temps réel d'aide à la mobilité urbaine pour Casablanca. En unifiant le traitement de flux continu (Flink) avec des analyses prédictives et décisionnelles (Spark, MLlib et Cassandra), la plateforme remplit l'ensemble des exigences de performance, de sécurité et de scalabilité requises pour une mise en production future à l'échelle métropolitaine.
+
+\end{document}

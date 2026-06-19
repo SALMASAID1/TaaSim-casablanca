@@ -539,6 +539,7 @@ services:
       - taasim
     ports:
       - "8000:8000"
+      - "8443:8000"   # HTTPS — self-signed cert (Sprint 5, Task 06)
     environment:
       <<: *s3a-env
       CASSANDRA_HOST: cassandra
@@ -562,7 +563,7 @@ services:
     volumes:
       - s3a_jars:/opt/extra-jars:ro
     healthcheck:
-      test: [ "CMD-SHELL", "curl -sf http://localhost:8000/ > /dev/null" ]
+      test: [ "CMD-SHELL", "curl -sf -k https://localhost:8000/ > /dev/null" ]
       interval: 15s
       timeout: 5s
       retries: 5
