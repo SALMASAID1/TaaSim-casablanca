@@ -523,6 +523,7 @@ services:
       CASSANDRA_KEYSPACE: taasim
       KAFKA_BROKER: kafka:29092
       KAFKA_TRIPS_TOPIC: raw.trips
+      JWT_SECRET: ${JWT_SECRET:-taasim-dev-jwt-secret}
     depends_on:
       cassandra:
         condition: service_healthy

@@ -12,16 +12,16 @@ Implement JWT-based authentication on all FastAPI endpoints using `python-jose`,
 `/auth/token` login endpoint and two roles (`rider`, `admin`), enforced via `Depends()` guards.
 
 ## Acceptance Criteria
-- [ ] `POST /auth/token` endpoint accepts `{username, password}` and returns `{access_token, token_type}`
-- [ ] Tokens signed with HS256 and a secret key loaded from environment variable `JWT_SECRET`
-- [ ] Token payload contains: `sub` (username), `role` (`rider` or `admin`), `exp` (expiry)
-- [ ] Token expiry = 60 minutes
-- [ ] **Rider role restrictions**: `GET /api/v1/vehicles/zone/{id}` returns HTTP 403 for rider tokens;
+- [x] `POST /auth/token` endpoint accepts `{username, password}` and returns `{access_token, token_type}`
+- [x] Tokens signed with HS256 and a secret key loaded from environment variable `JWT_SECRET`
+- [x] Token payload contains: `sub` (username), `role` (`rider` or `admin`), `exp` (expiry)
+- [x] Token expiry = 60 minutes
+- [x] **Rider role restrictions**: `GET /api/v1/vehicles/zone/{id}` returns HTTP 403 for rider tokens;
   `POST /api/v1/demand/forecast` returns HTTP 403 for rider tokens
-- [ ] **Admin role**: full access to all endpoints
-- [ ] All protected endpoints return HTTP 401 if no token provided
-- [ ] All protected endpoints return HTTP 401 if token is expired or tampered
-- [ ] `curl` test script `tests/test_jwt_auth.sh` committed, covering:
+- [x] **Admin role**: full access to all endpoints
+- [x] All protected endpoints return HTTP 401 if no token provided
+- [x] All protected endpoints return HTTP 401 if token is expired or tampered
+- [x] `curl` test script `tests/test_jwt_auth.sh` committed, covering:
   - Valid rider token → can reserve trip ✓
   - Valid rider token → cannot access vehicles ✗ (403)
   - Valid admin token → can access all endpoints ✓
@@ -65,7 +65,7 @@ Founder A
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers

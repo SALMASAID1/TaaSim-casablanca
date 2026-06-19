@@ -4,6 +4,7 @@
 Endpoints
 ---------
 GET  /                                   Health / readiness probe
+POST /auth/token                         Issue a JWT access token for demo users
 GET  /api/v1/vehicles/zone/{zone_id}     Latest vehicle positions in a zone (last 30 s)
 POST /api/v1/trips                        Submit a trip request (publishes to Kafka raw.trips)
 
@@ -30,6 +31,7 @@ CASSANDRA_PORT      Native CQL port         (default: 9042)
 CASSANDRA_KEYSPACE  Keyspace                (default: taasim)
 KAFKA_BROKER        Kafka bootstrap server  (default: kafka:29092)
 KAFKA_TRIPS_TOPIC   Topic for trip events   (default: raw.trips)
+JWT_SECRET          JWT signing secret      (default: taasim-dev-jwt-secret)
 """
 
 from __future__ import annotations
@@ -40,15 +42,17 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import AsyncIterator, List, Optional
+from typing import AsyncIterator, List, Literal, Optional
 
 from cassandra.cluster import Cluster, Session
 from cassandra.policies import DCAwareRoundRobinPolicy, RoundRobinPolicy
 from cassandra.query import SimpleStatement, ConsistencyLevel
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from kafka import KafkaProducer
 from pydantic import BaseModel, Field
+from jose import JWTError, jwt
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -67,6 +71,16 @@ CASSANDRA_PORT = int(os.getenv("CASSANDRA_PORT", "9042"))
 CASSANDRA_KEYSPACE = os.getenv("CASSANDRA_KEYSPACE", "taasim")
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:29092")
 KAFKA_TRIPS_TOPIC = os.getenv("KAFKA_TRIPS_TOPIC", "raw.trips")
+JWT_SECRET = os.getenv("JWT_SECRET", "taasim-dev-jwt-secret")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = 60
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
+DEMO_USERS = {
+    "admin": {"password": "adminpass", "role": "admin"},
+    "rider1": {"password": "riderpass", "role": "rider"},
+}
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -90,6 +104,74 @@ class TripRequest(BaseModel):
 class TripResponse(BaseModel):
     trip_id: str
     status: str = "pending"
+
+
+
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class AuthenticatedUser(BaseModel):
+    username: str
+    role: Literal["rider", "admin"]
+
+
+def authenticate_user(username: str, password: str) -> Optional[AuthenticatedUser]:
+    user = DEMO_USERS.get(username)
+    if user is None or user["password"] != password:
+        return None
+    return AuthenticatedUser(username=username, role=user["role"])
+
+
+def create_access_token(username: str, role: str) -> str:
+    payload = {
+        "sub": username,
+        "role": role,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRE_MINUTES),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _invalid_token() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> AuthenticatedUser:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError as exc:
+        raise _invalid_token() from exc
+
+    username = payload.get("sub")
+    role = payload.get("role")
+    if not isinstance(username, str) or role not in {"rider", "admin"}:
+        raise _invalid_token()
+
+    user = DEMO_USERS.get(username)
+    if user is None or user["role"] != role:
+        raise _invalid_token()
+
+    return AuthenticatedUser(username=username, role=role)
+
+
+def require_authenticated_user(current_user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
+    return current_user
+
+
+def require_admin(current_user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return current_user
 
 
 # ---------------------------------------------------------------------------
@@ -235,13 +317,35 @@ async def root() -> dict:
     return {"service": "TaaSim API", "version": "0.2.0", "status": "ok"}
 
 
+@app.post(
+    "/auth/token",
+    response_model=TokenResponse,
+    tags=["auth"],
+    summary="Issue a JWT access token for the demo users",
+)
+async def issue_token(form_data: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
+    user = authenticate_user(form_data.username, form_data.password)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return TokenResponse(access_token=create_access_token(user.username, user.role))
+
+
 @app.get(
     "/api/v1/vehicles/zone/{zone_id}",
     response_model=List[VehiclePosition],
     tags=["vehicles"],
     summary="Latest vehicle positions in a zone (last 30 s)",
 )
-async def vehicles_in_zone(zone_id: int, request: Request) -> List[VehiclePosition]:
+async def vehicles_in_zone(
+    zone_id: int,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_admin),
+) -> List[VehiclePosition]:
     """Return all vehicle positions in *zone_id* reported within the last 30 seconds.
 
     **Query strategy**: The Cassandra table is partitioned on ``(city, zone_id)``
@@ -280,7 +384,12 @@ async def vehicles_in_zone(zone_id: int, request: Request) -> List[VehiclePositi
             )
         )
 
-    logger.info("zone=%d → %d vehicles in last 30s", zone_id, len(results))
+    logger.info(
+        "zone=%d requested by=%s → %d vehicles in last 30s",
+        zone_id,
+        current_user.username,
+        len(results),
+    )
     return results
 
 
@@ -291,7 +400,11 @@ async def vehicles_in_zone(zone_id: int, request: Request) -> List[VehiclePositi
     tags=["trips"],
     summary="Submit a trip request (stub — publishes to raw.trips)",
 )
-async def create_trip(body: TripRequest, request: Request) -> TripResponse:
+async def create_trip(
+    body: TripRequest,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+) -> TripResponse:
     """Publish a trip-request event to Kafka topic ``raw.trips``.
 
     This is a **stub**: the trip_id is generated here and the event is
@@ -323,7 +436,30 @@ async def create_trip(body: TripRequest, request: Request) -> TripResponse:
         logger.error("Failed to enqueue trip %s: %s", trip_id, exc)
         raise HTTPException(status_code=503, detail="Failed to publish trip event") from exc
 
-    logger.info("Trip enqueued → trip_id=%s origin=%d dest=%d rider=%s",
-                trip_id, body.origin_zone, body.destination_zone, body.rider_id)
+    logger.info(
+        "Trip enqueued → trip_id=%s origin=%d dest=%d rider=%s requested_by=%s",
+        trip_id,
+        body.origin_zone,
+        body.destination_zone,
+        body.rider_id,
+        current_user.username,
+    )
 
     return TripResponse(trip_id=trip_id, status="pending")
+
+
+@app.post(
+    "/api/v1/demand/forecast",
+    status_code=202,
+    tags=["demand"],
+    summary="Request demand forecast (stub)",
+)
+async def get_demand_forecast(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_admin),
+) -> dict:
+    """Stub for demand forecast ML endpoint. Returns 202 Accepted.
+    
+    Restricted to admin users only.
+    """
+    return {"status": "accepted", "message": "Forecast computation started"}
