@@ -2,18 +2,17 @@ import requests
 import time
 import numpy as np
 
-url = "http://localhost:8000/auth/token"
-resp = requests.post(url, data={"username": "admin", "password": "adminpass"})
+url = "https://localhost:8000/auth/token"
+resp = requests.post(url, data={"username": "admin", "password": "adminpass"}, verify=False)
 token = resp.json()["access_token"]
 
-url_forecast = "http://localhost:8000/api/v1/demand/forecast"
+url_forecast = "https://localhost:8000/api/v1/vehicles/zone/5"
 headers = {"Authorization": f"Bearer {token}"}
-payload = {"zone_id": 5, "datetime": "2014-06-15T10:00:00Z"}
 
 latencies = []
 for i in range(20):
     start = time.time()
-    resp_forecast = requests.post(url_forecast, headers=headers, json=payload)
+    resp_forecast = requests.get(url_forecast, headers=headers, verify=False)
     end = time.time()
     latencies.append((end - start) * 1000)
 
