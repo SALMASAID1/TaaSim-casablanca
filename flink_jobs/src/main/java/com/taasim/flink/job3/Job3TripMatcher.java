@@ -75,6 +75,12 @@ public class Job3TripMatcher {
         env.enableCheckpointing(checkpointIntervalMs);
         env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.AT_LEAST_ONCE);
         env.getCheckpointConfig().setCheckpointStorage(checkpointDir);
+
+        // Add Restart Strategy for Chaos Engineering (Automatic Recovery)
+        env.setRestartStrategy(org.apache.flink.api.common.restartstrategy.RestartStrategies.fixedDelayRestart(
+            3, // number of restart attempts
+            org.apache.flink.api.common.time.Time.seconds(10) // delay between attempts
+        ));
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(30_000L);
         env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
         env.setStateBackend(new EmbeddedRocksDBStateBackend());

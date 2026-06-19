@@ -16,7 +16,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         curl \
         libev4 \
         default-jre-headless \
-        procps
+        procps \
+        openssl
 
 WORKDIR /app
 
@@ -31,5 +32,12 @@ COPY main.py .
 
 EXPOSE 8000
 
+# Generate self-signed TLS/SSL certificates for FastAPI HTTPS
+RUN mkdir -p /etc/ssl/api && \
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/ssl/api/key.pem \
+    -out /etc/ssl/api/cert.pem \
+    -subj "/C=MA/ST=Casablanca/L=Casablanca/O=TaaSim/CN=localhost"
+
 # Use 1 worker in dev (matches single-node setup).  Increase workers in prod.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--ssl-keyfile", "/etc/ssl/api/key.pem", "--ssl-certfile", "/etc/ssl/api/cert.pem"]
