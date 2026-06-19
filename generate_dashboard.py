@@ -7,7 +7,7 @@ def create_panel_geomap(id, title, x, y, h, w):
         f"SELECT taxi_id, lat, lon, status, speed, event_time "
         f"FROM taasim.vehicle_positions "
         f"WHERE city='casablanca' AND zone_id IN {ZONES_IN} "
-        f"AND event_time >= $__timeFrom AND event_time <= $__timeTo"
+        f"AND event_time >= $__timeFrom AND event_time <= $__timeTo ALLOW FILTERING"
     )
     return {
         "id": id,
@@ -135,9 +135,8 @@ dashboard = {
     "refresh": "10s",
     "time": {"from": "now-30s", "to": "now"},
     "panels": [
-        # Row 1: Fleet Overview
         create_panel_stat(2, "Active Vehicles", 0, 0, 4, 6, 
-            f"SELECT count(taxi_id) FROM taasim.vehicle_positions WHERE city='casablanca' AND zone_id IN {ZONES_IN} AND event_time >= $__timeFrom AND event_time <= $__timeTo"),
+            f"SELECT count(taxi_id) FROM taasim.vehicle_positions WHERE city='casablanca' AND zone_id IN {ZONES_IN} AND event_time >= $__timeFrom AND event_time <= $__timeTo ALLOW FILTERING"),
         create_panel_stat(3, "Total Trips (Today)", 6, 0, 4, 6, 
             "SELECT count(trip_id) FROM taasim.trips WHERE city='casablanca' AND date_bucket = toDate(now()) ALLOW FILTERING", "blue"),
         create_panel_stat(4, "Avg Fare", 12, 0, 4, 6, 
@@ -145,14 +144,11 @@ dashboard = {
         create_panel_stat(5, "Avg ETA (sec)", 18, 0, 4, 6, 
             "SELECT avg(cast(eta_seconds as double)) FROM taasim.trips WHERE city='casablanca' AND date_bucket = toDate(now()) ALLOW FILTERING", "purple"),
 
-        # Row 2: Live Map
         create_panel_geomap(1, "Casablanca Fleet Real-Time Map", 0, 4, 12, 18),
         
-        # Row 2 Side: Zone Distribution
         create_panel_bar(6, "Vehicles per Zone", 18, 4, 12, 6,
-            f"SELECT cast(zone_id as text) as zone_id, count(taxi_id) FROM taasim.vehicle_positions WHERE city='casablanca' AND zone_id IN {ZONES_IN} AND event_time >= $__timeFrom AND event_time <= $__timeTo GROUP BY zone_id"),
+            f"SELECT cast(zone_id as text) as zone_id, count(taxi_id) FROM taasim.vehicle_positions WHERE city='casablanca' AND zone_id IN {ZONES_IN} AND event_time >= $__timeFrom AND event_time <= $__timeTo GROUP BY zone_id ALLOW FILTERING"),
 
-        # Row 3: Market Dynamics
         {
             "id": 7,
             "title": "Zone Supply/Demand Heatmap (Sprint 3 Ready)",
@@ -162,7 +158,7 @@ dashboard = {
             "targets": [
                 {
                     "refId": "A",
-                    "target": f"SELECT zone_id, active_vehicles, pending_requests, ratio FROM taasim.demand_zones WHERE city='casablanca' AND zone_id IN {ZONES_IN} AND window_start >= $__timeFrom AND window_start <= $__timeTo",
+                    "target": f"SELECT zone_id, active_vehicles, pending_requests, ratio FROM taasim.demand_zones WHERE city='casablanca' AND zone_id IN {ZONES_IN} AND window_start >= $__timeFrom AND window_start <= $__timeTo ALLOW FILTERING",
                     "rawQuery": True,
                     "format": "table",
                     "queryType": "query"

@@ -85,3 +85,5 @@ osrm_data/**
 !raw/**/*.r
 !raw/**/*.py
 !raw/**/*.sh
+
+generate_dashboard.py
