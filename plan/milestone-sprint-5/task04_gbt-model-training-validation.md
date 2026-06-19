@@ -13,23 +13,23 @@ split, evaluate against the naive baseline, produce a feature importance chart, 
 `PipelineModel` artifact to `s3a://taasim/ml/models/demand_v1/`.
 
 ## Acceptance Criteria
-- [ ] Feature matrix loaded from `s3a://taasim/ml/features/`
-- [ ] **Temporal train/test split**: first 10 months (Jul 2013 – Apr 2014) = train,
+- [x] Feature matrix loaded from `s3a://taasim/ml/features/`
+- [x] **Temporal train/test split**: first 10 months (Jul 2013 – Apr 2014) = train,
   last 2 months (May–Jun 2014) = test. Split performed with `filter()` on `year_month` column —
   **no random shuffle across time** (would leak future data into training)
-- [ ] Spark ML `Pipeline` built: `VectorAssembler` → `StandardScaler` → `GBTRegressor`
-- [ ] `CrossValidator` with `ParamGridBuilder`: test 2 values of `maxDepth` (5 and 7) only,
+- [x] Spark ML `Pipeline` built: `VectorAssembler` → `StandardScaler` → `GBTRegressor`
+- [x] `CrossValidator` with `ParamGridBuilder`: test 2 values of `maxDepth` (5 and 7) only,
   3 folds (time constraint — not full grid search)
-- [ ] **Evaluation**: RMSE and MAE computed on test set using `RegressionEvaluator`
-- [ ] **Baseline**: naive model that predicts `demand_lag_7d` as the forecast, evaluated with
+- [x] **Evaluation**: RMSE and MAE computed on test set using `RegressionEvaluator`
+- [x] **Baseline**: naive model that predicts `demand_lag_7d` as the forecast, evaluated with
   the same RMSE metric on the same test set
-- [ ] GBT model achieves **lower RMSE than the naive baseline** (mandatory pass criterion)
-- [ ] Per-zone RMSE comparison table (GBT vs baseline) printed and saved to
+- [x] GBT model achieves **lower RMSE than the naive baseline** (mandatory pass criterion)
+- [x] Per-zone RMSE comparison table (GBT vs baseline) printed and saved to
   `docs/ml-evaluation-table.md`
-- [ ] Feature importance chart saved to `docs/ml-feature-importance.png` with top 3 predictors
+- [x] Feature importance chart saved to `docs/ml-feature-importance.png` with top 3 predictors
   identified and explained in business terms
-- [ ] Trained model saved: `model.write().overwrite().save("s3a://taasim/ml/models/demand_v1/")`
-- [ ] Feature importance values logged to `s3a://taasim/ml/models/demand_v1/feature_importances.txt`
+- [x] Trained model saved: `model.write().overwrite().save("s3a://taasim/ml/models/demand_v1/")`
+- [x] Feature importance values logged to `s3a://taasim/ml/models/demand_v1/feature_importances.txt`
 
 ## Technical Hints
 - Pipeline construction:
@@ -77,7 +77,7 @@ Founder B
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers
