@@ -285,6 +285,10 @@ class VehicleGPSProducer:
                 retries=5,
                 linger_ms=20,
                 compression_type="gzip",
+                security_protocol="SASL_PLAINTEXT",
+                sasl_mechanism="PLAIN",
+                sasl_plain_username="gps-producer",
+                sasl_plain_password="gps-producer-secret",
             )
         except Exception as exc:
             logger.error("Failed to connect to Kafka: %s", exc)

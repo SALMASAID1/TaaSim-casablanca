@@ -85,6 +85,9 @@ public class Job2DemandAggregator {
                         .setGroupId("flink-job2-gps")
                         .setStartingOffsets(OffsetsInitializer.earliest())
                         .setValueOnlyDeserializer(new SimpleStringSchema())
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .build();
 
         final KafkaSource<String> tripsSource =
@@ -94,6 +97,9 @@ public class Job2DemandAggregator {
                         .setGroupId("flink-job2-trips")
                         .setStartingOffsets(OffsetsInitializer.earliest())
                         .setValueOnlyDeserializer(new SimpleStringSchema())
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .build();
 
         final DataStream<String> gpsRawJson =
@@ -203,6 +209,9 @@ public class Job2DemandAggregator {
                 KafkaSink.<Tuple2<String, String>>builder()
                         .setBootstrapServers(kafkaBootstrap)
                         .setDeliverGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .setRecordSerializer(
                                 KafkaRecordSerializationSchema.<Tuple2<String, String>>builder()
                                         .setTopic(demandSinkTopic)

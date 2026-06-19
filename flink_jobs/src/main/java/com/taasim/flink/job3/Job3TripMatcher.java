@@ -87,6 +87,9 @@ public class Job3TripMatcher {
                         .setGroupId("flink-job3-gps")
                         .setStartingOffsets(OffsetsInitializer.earliest())
                         .setValueOnlyDeserializer(new SimpleStringSchema())
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .build();
 
         final KafkaSource<String> tripsSource =
@@ -96,6 +99,9 @@ public class Job3TripMatcher {
                         .setGroupId("flink-job3-trips")
                         .setStartingOffsets(OffsetsInitializer.earliest())
                         .setValueOnlyDeserializer(new SimpleStringSchema())
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .build();
 
         final DataStream<String> gpsRawJson =
@@ -212,6 +218,9 @@ public class Job3TripMatcher {
                 KafkaSink.<String>builder()
                         .setBootstrapServers(kafkaBootstrap)
                         .setDeliverGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .setRecordSerializer(
                                 KafkaRecordSerializationSchema.<String>builder()
                                         .setTopic(unmatchedSinkTopic)

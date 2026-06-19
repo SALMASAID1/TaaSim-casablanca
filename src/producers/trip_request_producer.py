@@ -260,6 +260,10 @@ class TripRequestProducer:
                 linger_ms=20,
                 compression_type="gzip",
                 client_id="taasim-trip-request-producer",
+                security_protocol="SASL_PLAINTEXT",
+                sasl_mechanism="PLAIN",
+                sasl_plain_username="trip-producer",
+                sasl_plain_password="trip-producer-secret",
             )
         except Exception as exc:
             logger.error("Failed to create Kafka producer: %s", exc)

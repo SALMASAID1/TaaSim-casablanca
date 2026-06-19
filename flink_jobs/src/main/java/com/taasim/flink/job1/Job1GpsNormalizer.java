@@ -87,6 +87,9 @@ public class Job1GpsNormalizer {
                         .setGroupId("flink-job1-gps")
                         .setStartingOffsets(OffsetsInitializer.earliest())
                         .setValueOnlyDeserializer(new SimpleStringSchema())
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .build();
 
         final DataStream<String> rawJson =
@@ -164,6 +167,9 @@ public class Job1GpsNormalizer {
                 KafkaSink.<Tuple2<String, String>>builder()
                         .setBootstrapServers(kafkaBootstrap)
                         .setDeliverGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                        .setProperty("security.protocol", "SASL_PLAINTEXT")
+                        .setProperty("sasl.mechanism", "PLAIN")
+                        .setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"flink\" password=\"flink-secret\";")
                         .setRecordSerializer(
                                 KafkaRecordSerializationSchema.<Tuple2<String, String>>builder()
                                         .setTopic(sinkTopic)

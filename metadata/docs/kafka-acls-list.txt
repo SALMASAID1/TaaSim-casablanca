@@ -1,0 +1,15 @@
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=*, patternType=PREFIXED)`: 
+ 	(principal=User:admin, host=*, operation=ALL, permissionType=ALLOW) 
+
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=raw.gps, patternType=LITERAL)`: 
+ 	(principal=User:gps-producer, host=*, operation=WRITE, permissionType=ALLOW) 
+
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=raw.trips, patternType=LITERAL)`: 
+ 	(principal=User:trip-producer, host=*, operation=WRITE, permissionType=ALLOW) 
+
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=raw., patternType=PREFIXED)`: 
+ 	(principal=User:flink, host=*, operation=READ, permissionType=ALLOW) 
+
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=processed., patternType=PREFIXED)`: 
+ 	(principal=User:flink, host=*, operation=WRITE, permissionType=ALLOW) 
+

@@ -252,6 +252,10 @@ def _connect_kafka() -> Optional[KafkaProducer]:
             retries=5,
             linger_ms=10,
             client_id="taasim-api",
+            security_protocol="SASL_PLAINTEXT",
+            sasl_mechanism="PLAIN",
+            sasl_plain_username="trip-producer",
+            sasl_plain_password="trip-producer-secret",
         )
         logger.info("Kafka producer ready → %s (topic: %s)", KAFKA_BROKER, KAFKA_TRIPS_TOPIC)
         return producer
