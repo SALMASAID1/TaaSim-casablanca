@@ -13,21 +13,21 @@ all four feature groups (temporal, spatial, weather, lag), and writes the featur
 `s3a://taasim/ml/features/`.
 
 ## Acceptance Criteria
-- [ ] Feature matrix produced with the following columns:
+- [x] Feature matrix produced with the following columns:
   - **Temporal**: `hour_of_day`, `day_of_week`, `is_weekend` (bool), `is_friday` (bool)
   - **Spatial**: `zone_id`, `zone_population_density`, `zone_type` (one-hot encoded:
     `zone_type_residential`, `zone_type_commercial`, `zone_type_transit_hub`)
   - **Weather**: `is_raining` (bool), `temperature_bucket` (0=cold <15°C / 1=mild / 2=hot >28°C)
   - **Lag**: `demand_lag_1d`, `demand_lag_7d`, `rolling_7d_mean`
   - **Target**: `trip_count` (number of trip requests per zone per 30-min slot)
-- [ ] Lag features computed using Spark `Window` functions partitioned by `zone_id`, ordered by
+- [x] Lag features computed using Spark `Window` functions partitioned by `zone_id`, ordered by
   `time_slot_start`
-- [ ] Weather data joined from Open-Meteo historical API (Porto coordinates, July 2013–June 2014)
-- [ ] Zone reference table joined: `zone_population_density` and `zone_type` from `zone_mapping.csv`
-- [ ] Feature matrix written as Parquet to `s3a://taasim/ml/features/`
-- [ ] Feature matrix row count = (16 zones × 365 days × 48 half-hour slots) ≈ 280,320 rows
+- [x] Weather data joined from Open-Meteo historical API (Porto coordinates, July 2013–June 2014)
+- [x] Zone reference table joined: `zone_population_density` and `zone_type` from `zone_mapping.csv`
+- [x] Feature matrix written as Parquet to `s3a://taasim/ml/features/`
+- [x] Feature matrix row count = (16 zones × 365 days × 48 half-hour slots) ≈ 280,320 rows
   (allow ±10% for missing weather data)
-- [ ] No null values in any feature column (null-imputed before writing)
+- [x] No null values in any feature column (null-imputed before writing)
 
 ## Technical Hints
 - Aggregate Porto trips to (zone_id, time_slot_30min) → trip_count first, then compute features:
@@ -61,7 +61,7 @@ Founder B
 ## Status
 - [ ] Not started  
 - [ ] In progress  
-- [ ] Done  
+- [x] Done  
 - [ ] Blocked
 
 ## Notes / Blockers
