@@ -1,6 +1,3 @@
-Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=*, patternType=PREFIXED)`: 
- 	(principal=User:admin, host=*, operation=ALL, permissionType=ALLOW) 
-
 Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=raw.gps, patternType=LITERAL)`: 
  	(principal=User:gps-producer, host=*, operation=WRITE, permissionType=ALLOW) 
 
@@ -9,6 +6,12 @@ Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=raw.trips, p
 
 Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=raw.unmatched, patternType=LITERAL)`: 
  	(principal=User:flink, host=*, operation=WRITE, permissionType=ALLOW) 
+
+Current ACLs for resource `ResourcePattern(resourceType=GROUP, name=flink-, patternType=PREFIXED)`: 
+ 	(principal=User:flink, host=*, operation=READ, permissionType=ALLOW) 
+
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=*, patternType=PREFIXED)`: 
+ 	(principal=User:admin, host=*, operation=ALL, permissionType=ALLOW) 
 
 Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=raw., patternType=PREFIXED)`: 
  	(principal=User:flink, host=*, operation=READ, permissionType=ALLOW) 

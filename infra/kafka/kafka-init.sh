@@ -25,6 +25,7 @@ kafka-acls --bootstrap-server "$BOOTSTRAP_SERVER" $CMD_CFG --add --allow-princip
 kafka-acls --bootstrap-server "$BOOTSTRAP_SERVER" $CMD_CFG --add --allow-principal User:flink --operation Read --topic "processed." --resource-pattern-type prefixed
 kafka-acls --bootstrap-server "$BOOTSTRAP_SERVER" $CMD_CFG --add --allow-principal User:flink --operation Write --topic "processed." --resource-pattern-type prefixed
 kafka-acls --bootstrap-server "$BOOTSTRAP_SERVER" $CMD_CFG --add --allow-principal User:flink --operation Write --topic "raw.unmatched"
+kafka-acls --bootstrap-server "$BOOTSTRAP_SERVER" $CMD_CFG --add --allow-principal User:flink --operation Read --group "flink-" --resource-pattern-type prefixed
 # Admin
 kafka-acls --bootstrap-server "$BOOTSTRAP_SERVER" $CMD_CFG --add --allow-principal User:admin --operation All --topic "*" --resource-pattern-type prefixed
 
