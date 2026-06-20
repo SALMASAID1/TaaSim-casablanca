@@ -31,8 +31,8 @@
 
 | Member | Role | Expertise |
 |--------|------|-----------|
-| [Founder A Name] | Data Engineering Lead | Kafka, Flink, Docker, CI/CD |
-| [Founder B Name] | ML & Platform Lead | Spark MLlib, FastAPI, Cassandra |
+| Mohamed Tamzirt | Data Engineering Lead | Kafka, Flink, Docker, CI/CD |
+| Salma Said | ML & Platform Lead | Spark MLlib, FastAPI, Cassandra |
 
 **Program:** Advanced Big Data · ENSA Al Hoceima · 2025–2026
 

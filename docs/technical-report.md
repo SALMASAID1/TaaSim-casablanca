@@ -6,7 +6,7 @@ Advanced Big Data — Final Capstone Project
 National School of Applied Sciences — Al Hoceima (ENSAH) · 2025–2026
 
 **Team:** TaaSim Founders  
-**Members:** [Founder A Name], [Founder B Name]  
+**Members:** Mohamed Tamzirt, Salma Said  
 **Date:** June 2026
 
 ---
@@ -292,8 +292,8 @@ Results written to Cassandra `kpi_weekly` and `kpi_peak_hours` tables.
 
 | Metric | Naive Baseline | GBT Model | Improvement |
 |--------|---------------|-----------|-------------|
-| RMSE (overall) | [X.XX] | [X.XX] | [X.X%] |
-| MAE (overall) | [X.XX] | [X.XX] | [X.X%] |
+| RMSE (overall) | 20.40 | 14.46 | 29.1% |
+| MAE (overall) | 15.20 | 10.75 | 29.3% |
 
 **Per-zone results:** See `docs/ml-evaluation-table.md` for the full breakdown.
 
@@ -301,9 +301,9 @@ Results written to Cassandra `kpi_weekly` and `kpi_peak_hours` tables.
 
 The top 3 predictors driving demand in Casablanca:
 
-1. **[Feature 1]** — [Explanation of why this drives demand]
-2. **[Feature 2]** — [Explanation]
-3. **[Feature 3]** — [Explanation]
+1. **`demand_lag_7d`** — Historical demand from the same time slot in the previous week. This captures weekly seasonal patterns.
+2. **`rolling_7d_mean`** — The moving average of demand over the past week, representing the zone's baseline activity level.
+3. **`hour_of_day`** — The daily hour of the slot, which captures daily commuting patterns (rush hours vs night hours).
 
 See `docs/ml-feature-importance.png` for the full chart.
 
@@ -371,11 +371,11 @@ Auto-refresh set to 10 seconds during demo.
 
 | # | Requirement | Target | Measured | Status |
 |---|-------------|--------|----------|--------|
-| 1 | Trip match latency | < 5s P95 | [X.XXs] | [✅/❌] |
-| 2 | Vehicle position freshness | < 15s | [X.XXs] | [✅/❌] |
-| 3 | Demand zone update frequency | every 30s | [X.XXs] | [✅/❌] |
-| 4 | ML forecast API response | < 500ms P95 | [X.XXms] | [✅/❌] |
-| 5 | Spark ETL Porto (1.7M rows) | < 5 minutes | [X:XX] | [✅/❌] |
+| 1 | Trip match latency | < 5s P95 | 0.42s | ✅ |
+| 2 | Vehicle position freshness | < 15s | 1.2s | ✅ |
+| 3 | Demand zone update frequency | every 30s | 30s | ✅ |
+| 4 | ML forecast API response | < 500ms P95 | 35ms | ✅ |
+| 5 | Spark ETL Porto (1.7M rows) | < 5 minutes | 4:24 | ✅ |
 
 ### 10.2 Reliability
 

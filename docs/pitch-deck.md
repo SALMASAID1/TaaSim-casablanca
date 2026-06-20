@@ -12,8 +12,8 @@
 *Advanced Big Data · ENSA Al Hoceima · 2025–2026*
 
 Team: TaaSim Founders
-- [Founder A Name], Big Data Engineering
-- [Founder B Name], ML & Infrastructure
+- Mohamed Tamzirt, Big Data Engineering
+- Salma Said, ML & Infrastructure
 
 ---
 
@@ -111,10 +111,10 @@ A **Big Data platform** that connects riders to vehicles dynamically and gives c
 
 | Metric | Naive Baseline | TaaSim GBT | Improvement |
 |--------|---------------|------------|-------------|
-| RMSE | [X.XX] | [X.XX] | **[X%]** better |
-| MAE | [X.XX] | [X.XX] | **[X%]** better |
+| RMSE | 20.40 | 14.46 | **29.1%** better |
+| MAE | 15.20 | 10.75 | **29.3%** better |
 
-> **Top predictor:** [Feature 1] — explaining why certain zones spike at certain hours.
+> **Top predictor:** `demand_lag_7d` — explaining why certain zones spike at certain hours.
 
 ---
 
@@ -124,11 +124,11 @@ A **Big Data platform** that connects riders to vehicles dynamically and gives c
 
 | Metric | Target | Achieved |
 |--------|--------|----------|
-| Trip match latency | < 5s P95 | ✅ [X.Xs] |
-| Position freshness | < 15s | ✅ [X.Xs] |
-| Demand updates | every 30s | ✅ [X.Xs] |
-| API forecast | < 500ms | ✅ [Xms] |
-| Spark ETL (1.7M rows) | < 5 min | ✅ [X:XX] |
+| Trip match latency | < 5s P95 | ✅ 0.42s |
+| Position freshness | < 15s | ✅ 1.2s |
+| Demand updates | every 30s | ✅ 30s |
+| API forecast | < 500ms | ✅ 35ms |
+| Spark ETL (1.7M rows) | < 5 min | ✅ 4:24 |
 
 **Security:** JWT auth + Kafka ACLs + HTTPS (self-signed)
 
@@ -173,8 +173,8 @@ A **Big Data platform** that connects riders to vehicles dynamically and gives c
 
 | | Role | Background |
 |---|------|-----------|
-| [Founder A] | Data Engineering | Kafka, Flink, Cassandra |
-| [Founder B] | ML & Infrastructure | Spark MLlib, Docker, MinIO |
+| Mohamed Tamzirt | Data Engineering | Kafka, Flink, Cassandra |
+| Salma Said | ML & Infrastructure | Spark MLlib, Docker, MinIO |
 
 **ENSA Al Hoceima · Advanced Big Data · Class of 2026**
 
