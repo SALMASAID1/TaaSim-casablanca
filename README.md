@@ -1,10 +1,8 @@
 # TaaSim Casablanca: Transport as a Service — Simulation
 
-![TaaSim Architecture](docs/sprint-1/stack-health.png)
-
 TaaSim (Transport as a Service – Simulation) is an intelligent, data-driven urban mobility platform designed for Casablanca. It treats urban transit as a real-time big data challenge by connecting riders and vehicles dynamically, predicting demand surges, and providing unified analytics for city planners.
 
-This project was developed as the Final Capstone Project for the Advanced Big Data program at the National School of Applied Sciences — Al Hoceima (ENSAH), 2025–2026.
+
 
 ## 👥 Team
 - **Mohamed Tamzirt** (Data Engineering Lead)
@@ -14,6 +12,8 @@ This project was developed as the Final Capstone Project for the Advanced Big Da
 ---
 
 ## 🏗️ Architecture Overview
+
+![TaaSim Workflow](docs/workflow_taaSim_project.png)
 
 TaaSim utilizes a **Kappa Architecture**, streamlining both real-time streaming and historical batch workflows through a unified messaging backbone. 
 
@@ -127,9 +127,13 @@ python tests/test_gps_anonymization.py
 
 ## 📖 Documentation
 For deeper dives into the system design, architecture decision records (ADRs), and sprint progress, refer to the `docs/` directory:
-* [Technical Report](docs/technical-report.md)
-* [Pitch Deck](docs/pitch-deck.md)
-* [Team & Concept](docs/team-concept.md)
+* [Architecture Decision Records (ADRs)](docs/adr/)
+* [ML Evaluation](docs/ml-evaluation-table.md)
+---
+
+## 📜 License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details. 
 
 ---
 *TaaSim Casablanca — Bringing data-driven mobility to Morocco, one zone at a time.*
+
