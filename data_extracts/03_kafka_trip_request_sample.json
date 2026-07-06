@@ -1,0 +1,8 @@
+{
+  "trip_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+  "rider_id": "rider-1452",
+  "origin_zone": 5,
+  "destination_zone": 12,
+  "requested_at": "2026-06-19T14:30:00Z",
+  "call_type": "B"
+}

@@ -1,0 +1,8 @@
+{
+  "taxi_id": "20000456",
+  "timestamp": "2026-06-19T14:30:05Z",
+  "lat": 33.5898,
+  "lon": -7.6038,
+  "speed": 45.2,
+  "status": "AVAILABLE"
+}

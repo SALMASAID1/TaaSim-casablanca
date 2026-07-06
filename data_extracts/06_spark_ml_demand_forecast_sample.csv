@@ -1,0 +1,5 @@
+city,zone_id,target_timestamp,baseline_demand_lag_7d,predicted_demand_gbt,actual_demand
+"Casablanca",1,"2026-06-19 15:00:00",45,52.3,50
+"Casablanca",5,"2026-06-19 15:00:00",120,150.8,145
+"Casablanca",12,"2026-06-19 15:00:00",15,18.2,16
+"Casablanca",16,"2026-06-19 15:00:00",85,110.1,105
