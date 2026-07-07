@@ -51,7 +51,6 @@ docker compose ps
 ### 2. Initialize Datasets
 Before running the simulation, verify that the required datasets are mounted or downloaded to the `raw/` directory:
 - `raw/porto-trips/train.csv` (Used for generating simulated Casablanca trips)
-- *Note: Do not commit these large datasets to version control.*
 
 ### 3. Start the Simulation Producers
 Once the stack is healthy, start the Python simulators to inject real-time GPS pings and ride reservations into Kafka:
